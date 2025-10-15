@@ -651,7 +651,29 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
   .shine-sweep::before{ animation: none !important; opacity: 0 !important; }
 }
 </style>
-</head>
+<style id="anim-fixes">
+/* === Anim Fixes (safe) === */
+.shine{
+  background-image: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.35), rgba(255,255,255,.06));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shineMove 2.4s cubic-bezier(.2,.8,.2,1) infinite;
+}
+@keyframes shineMove{
+  0%{ background-position: -200% 0; }
+  100%{ background-position: 200% 0; }
+}
+/* Icon in headings */
+.usp-icon{
+  width: 22px; height: 22px; display: inline-block; vertical-align: -4px; margin-right: 8px; opacity:.9;
+  fill: currentColor;
+}
+@media (prefers-reduced-motion: reduce){
+  .shine{ animation: none !important; color: inherit; -webkit-background-clip: initial; background-clip: initial; }
+}
+</style></head>
 <body>
 <header aria-label="Header utama Dirac Of Fragrance" class="site-header" role="banner">
 <div class="container topbar">
@@ -679,8 +701,8 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 <!-- Hero headline & tagline -->
 <div style="display:flex;align-items:flex-start;gap:1rem;flex-direction:column;">
 <div>
-<h2 id="hero-heading" style="margin:0;font-size:1.6rem">Aroma yang meninggalkan jejak.</h2>
-<p class="muted" style="margin:0.25rem 0 0 0">Kurasi parfum tepercaya untuk keseharian hingga momen spesial.</p>
+<h2 id="hero-heading" style="margin:0;font-size:1.6rem">Pilih Parfum Sesuai Dengan Selera Anda Gratis!!</h2>
+<p class="muted" style="margin:0.25rem 0 0 0">Dirac Of Fragrance — Solusi reseller parfum yang andal, jujur, dan siap mendukung pertumbuhan toko Anda.</p>
 </div>
 <!-- Hero slider -->
 <div aria-label="Hero slideshow" aria-roledescription="carousel" class="slider" data-autoplay="true" data-interval="false">
@@ -758,7 +780,7 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 <div>
 <article class="card">
 <h3>Profil Singkat</h3>
-<p>Kami percaya setiap orang punya aroma khas. Dirac Of Fragrance hadir sebagai partner wangi Anda—mengkurasi pilihan parfum orisinal, dikemas rapi, dan dikirim cepat. Kami mendampingi pelanggan, reseller, hingga retailer kecil untuk membangun kepercayaan lewat pengalaman aroma yang konsisten, menyenangkan, dan mudah dipahami.</p><p>Kami fokus pada kurasi yang jujur: rekomendasi sesuai gaya hidup, aktivitas, dan preferensi Anda. Dari fresh yang ringan hingga woody yang memikat, kami bantu Anda menemukan wangi yang benar-benar “Anda”.</p>
+<p>Dirac Of Fragrance adalah perusahaan reseller parfum yang berkomitmen menyediakan produk-produk aroma berkualitas, original, dan siap didistribusikan untuk retailer offline maupun online. Kami berdiri untuk menjembatani kebutuhan pelaku usaha kecil hingga menengah yang membutuhkan stok parfum berkualitas tanpa harus menghadapi persoalan keaslian dan kemasan.</p>
 <p>Kami melayani berbagai kebutuhan—dari single unit untuk toko baru, sample untuk katalog, hingga pemesanan grosir dengan harga kompetitif. Pelayanan after-sales dan dukungan pemasaran adalah bagian dari nilai tambah yang kami sediakan untuk pelanggan setia kami.</p>
 </article>
 <article aria-labelledby="historyHeading" class="card">
@@ -814,10 +836,10 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 </article>
 </aside>
 </div>
-</section><section class="container" id="why-us"><h2>Mengapa Memilih Kami</h2><ul class="highlights"><article class="card"><h3>Ori &amp; Terjamin</h3><p class="muted">Setiap produk melalui pengecekan batch dan kondisi.</p></article><article class="card"><h3>Pengiriman Sigap</h3><p class="muted">Packing aman dan proses kirim cepat sesuai area Anda.</p></article><article class="card"><h3>Konsultasi Personal</h3><p class="muted">Rekomendasi aroma berdasarkan gaya &amp; kebutuhan sehari-hari.</p></article><article class="card"><h3>Dukungan Reseller</h3><p class="muted">Materi produk rapi, tips display, dan update stok berkala.</p></article><article class="card"><h3>Respons Ramah</h3><p class="muted">Tanggapan cepat untuk pertanyaan, klaim, dan after-sales.</p></article></ul></section><section class="container" id="process"><h2>Cara Kami Bekerja</h2><p>Sourcing tepercaya → QC batch &amp; segel → Foto sebelum kirim → Packing aman → Pengiriman cepat → After-sales ramah.</p></section><section class="container" id="reseller"><h2>Program Reseller / Retailer</h2><p>Mulai kerja sama dengan proses onboarding yang ringan. Kami menyediakan kurasi best-seller, materi visual produk, serta panduan penataan rak agar penjualan lebih lancar. Kuantitas pembelian fleksibel dan kami memberi rekomendasi yang sesuai profil toko Anda.</p><ul><li>Mulai dari kuantitas yang fleksibel.</li><li>Update stok dan panduan produk yang rapi.</li><li>Rekomendasi display dan penjualan yang praktis.</li></ul><p class="muted">(Tambahkan detail MOQ/lead time/metode bayar sesuai kebijakan Anda.)</p></section>
+</section>
 <!-- Products / Highlights -->
 <section aria-labelledby="productsHeading" class="container" data-animate="" id="products">
-<h2 id="productsHeading">Produk &amp; Layanan Utama</h2><p class="muted">Koleksi kami disusun agar mudah dipilih: Top Notes memberi kesan pertama yang segar, Middle menghadirkan karakter utama, dan Base memastikan ketahanan aroma. Pilih kategori favorit Anda: Floral • Fresh • Woody • Sweet.</p>
+<h2 id="productsHeading">Produk &amp; Layanan Utama</h2>
 <div class="highlights">
 <article aria-labelledby="p1" class="card">
 <h3 id="p1">Reseller &amp; Grosir Parfum Branded</h3>
@@ -1151,7 +1173,7 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 </div>
 <div style="display:flex;justify-content:center;margin:1.5rem 0 0.5rem 0;"><a class="btn primary" href="https://diraccc.github.io/insights/">Web Insights</a></div></section>
 </main>
-<section class="container" id="cta-bottom"><h2>Butuh saran cepat?</h2><p><a href="https://wa.me/6281937036039" rel="noopener" target="_blank">Chat WhatsApp</a> untuk rekomendasi aroma sesuai kegiatan Anda hari ini—kami bantu pilih yang paling cocok.</p></section><footer class="site-footer" role="contentinfo"><p><strong>Dirac Of Fragrance</strong> — wangi yang menyempurnakan momen.</p>
+<footer class="site-footer" role="contentinfo">
 <div class="container footer-grid">
 <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap">
 <div>
