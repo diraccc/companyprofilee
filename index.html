@@ -651,203 +651,7 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
   .shine-sweep::before{ animation: none !important; opacity: 0 !important; }
 }
 </style>
-<style id="enhanced-ui-styles">
-/* =========================
-   ENHANCEMENT LAYER (INERT BY DEFAULT)
-   Activate by adding class="enhanced-ui" to <body>.
-   This will NOT affect default look unless enabled.
-   ========================= */
-:root{
-  --enh-maxw: 1200px;
-  --enh-radius: 12px;
-  --enh-shadow: 0 8px 24px rgba(0,0,0,0.18);
-  --enh-transition: 200ms ease;
-  --enh-spacing-lg: 96px;
-  --enh-spacing-md: 48px;
-  --enh-spacing-sm: 16px;
-
-  /* Luxe Nocturne */
-  --lux-bg: #0B0D10;
-  --lux-ink: #EDEAE6;
-  --lux-muted: rgba(255,255,255,0.62);
-  --lux-gold: #C6A867;
-
-  /* Soft Nude */
-  --nude-bg: #FAF7F2;
-  --nude-ink: #1F1F23;
-  --nude-muted: rgba(0,0,0,0.60);
-  --nude-taupe: #8A7D73;
-}
-
-/* Theme containers: ONLY apply when .enhanced-ui is present */
-.enhanced-ui.theme-luxe{
-  background-color: var(--lux-bg);
-  color: var(--lux-ink);
-}
-.enhanced-ui.theme-nude{
-  background-color: var(--nude-bg);
-  color: var(--nude-ink);
-}
-
-/* Typography (scoped) */
-.enhanced-ui .enh-display{
-  font-family: "Playfair Display", serif;
-  letter-spacing: .3px;
-}
-.enhanced-ui .enh-sans{
-  font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
-}
-
-/* Container width helper */
-.enhanced-ui .enh-container{
-  max-width: var(--enh-maxw);
-  margin-inline: auto;
-  padding-inline: 16px;
-}
-
-/* Hero overlay (inert by default) */
-.hero-overlay{
-  display: none;
-}
-.enhanced-ui .hero-overlay{
-  display: block;
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(1200px 500px at 70% 20%, rgba(0,0,0,.45), transparent 60%),
-    linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,0) 50%);
-}
-
-/* Card polish (only when enhanced) */
-.enhanced-ui .enh-card{
-  border-radius: var(--enh-radius);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-  transition: transform var(--enh-transition), box-shadow var(--enh-transition);
-  overflow: hidden;
-}
-.enhanced-ui .enh-card:hover{
-  transform: translateY(-4px);
-  box-shadow: var(--enh-shadow);
-}
-
-/* Buttons (scoped) */
-.enhanced-ui .enh-btn{
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 18px;
-  border-radius: 999px;
-  border: 1px solid currentColor;
-  text-decoration: none;
-  transition: transform var(--enh-transition), box-shadow var(--enh-transition), opacity var(--enh-transition);
-  will-change: transform;
-}
-.enhanced-ui.theme-luxe .enh-btn.primary{
-  background: var(--lux-gold);
-  color: #0B0D10;
-  border-color: var(--lux-gold);
-}
-.enhanced-ui.theme-nude .enh-btn.primary{
-  background: var(--nude-taupe);
-  color: #fff;
-  border-color: var(--nude-taupe);
-}
-.enhanced-ui .enh-btn:hover{ transform: translateY(-2px); box-shadow: var(--enh-shadow); }
-.enhanced-ui .enh-btn:active{ transform: translateY(0); opacity: .9; }
-
-/* Scent chips (appear only if created by JS) */
-.enhanced-ui .scent-chips{
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-.enhanced-ui .scent-chip{
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid currentColor;
-  opacity: .8;
-}
-
-/* Scroll reveal */
-.enhanced-ui [data-sr]{
-  opacity: 0;
-  transform: translateY(12px);
-  transition: opacity 420ms ease, transform 420ms ease;
-}
-.enhanced-ui [data-sr].sr-in{
-  opacity: 1;
-  transform: none;
-}
-
-/* Sticky CTA (hidden by default until enhanced) */
-#enh-sticky{
-  display: none;
-}
-.enhanced-ui #enh-sticky{
-  position: fixed;
-  left: 0; right: 0; bottom: 16px;
-  margin: 0 auto;
-  width: min(680px, calc(100% - 32px));
-  z-index: 9999;
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  align-items: center;
-  padding: 12px 16px;
-  border-radius: 16px;
-  backdrop-filter: blur(10px);
-  background: rgba(0,0,0,.5);
-  color: #fff;
-  box-shadow: 0 10px 30px rgba(0,0,0,.35);
-}
-.enhanced-ui.theme-nude #enh-sticky{
-  background: rgba(255,255,255,.7);
-  color: var(--nude-ink);
-}
-
-/* Testimonial slider hint preview (generic) */
-.enhanced-ui .enh-slider{
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 80%;
-  gap: 24px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  padding-bottom: 8px;
-}
-.enhanced-ui .enh-slide{
-  scroll-snap-align: start;
-}
-.enhanced-ui .enh-slider::-webkit-scrollbar{
-  height: 6px;
-}
-.enhanced-ui .enh-slider::-webkit-scrollbar-thumb{
-  background: rgba(0,0,0,.25);
-  border-radius: 999px;
-}
-
-/* Decorative subtle background noise (opt-in) */
-.enhanced-ui .bg-noise{
-  position: absolute; inset: -1px;
-  pointer-events: none;
-  opacity: .03;
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width=\"100\" height=\"100\"><filter id=\"n\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"0.8\" numOctaves=\"4\" stitchTiles=\"stitch\"/></filter><rect width=\"100%\" height=\"100%\" filter=\"url(%23n)\" opacity=\"1\"/></svg>');
-}
-
-/* Utilities */
-.enhanced-ui .muted{ opacity: .7; }
-.enhanced-ui .enh-grid{
-  display: grid;
-  gap: 24px;
-}
-@media (min-width: 768px){
-  .enhanced-ui .enh-grid.cols-3{ grid-template-columns: repeat(3, 1fr); }
-  .enhanced-ui .enh-grid.cols-4{ grid-template-columns: repeat(4, 1fr); }
-}
-</style><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="True" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=Playfair+Display:wght@600;700&amp;display=swap" rel="stylesheet"/></head>
+</head>
 <body>
 <header aria-label="Header utama Dirac Of Fragrance" class="site-header" role="banner">
 <div class="container topbar">
@@ -875,8 +679,8 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 <!-- Hero headline & tagline -->
 <div style="display:flex;align-items:flex-start;gap:1rem;flex-direction:column;">
 <div>
-<h2 id="hero-heading" style="margin:0;font-size:1.6rem">Pilih Parfum Sesuai Dengan Selera Anda Gratis!!</h2>
-<p class="muted" style="margin:0.25rem 0 0 0">Dirac Of Fragrance — Solusi reseller parfum yang andal, jujur, dan siap mendukung pertumbuhan toko Anda.</p>
+<h2 id="hero-heading" style="margin:0;font-size:1.6rem">Aroma yang meninggalkan jejak.</h2>
+<p class="muted" style="margin:0.25rem 0 0 0">Kurasi parfum tepercaya untuk keseharian hingga momen spesial.</p>
 </div>
 <!-- Hero slider -->
 <div aria-label="Hero slideshow" aria-roledescription="carousel" class="slider" data-autoplay="true" data-interval="false">
@@ -954,7 +758,7 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 <div>
 <article class="card">
 <h3>Profil Singkat</h3>
-<p>Dirac Of Fragrance adalah perusahaan reseller parfum yang berkomitmen menyediakan produk-produk aroma berkualitas, original, dan siap didistribusikan untuk retailer offline maupun online. Kami berdiri untuk menjembatani kebutuhan pelaku usaha kecil hingga menengah yang membutuhkan stok parfum berkualitas tanpa harus menghadapi persoalan keaslian dan kemasan.</p>
+<p>Kami percaya setiap orang punya aroma khas. Dirac Of Fragrance hadir sebagai partner wangi Anda—mengkurasi pilihan parfum orisinal, dikemas rapi, dan dikirim cepat. Kami mendampingi pelanggan, reseller, hingga retailer kecil untuk membangun kepercayaan lewat pengalaman aroma yang konsisten, menyenangkan, dan mudah dipahami.</p><p>Kami fokus pada kurasi yang jujur: rekomendasi sesuai gaya hidup, aktivitas, dan preferensi Anda. Dari fresh yang ringan hingga woody yang memikat, kami bantu Anda menemukan wangi yang benar-benar “Anda”.</p>
 <p>Kami melayani berbagai kebutuhan—dari single unit untuk toko baru, sample untuk katalog, hingga pemesanan grosir dengan harga kompetitif. Pelayanan after-sales dan dukungan pemasaran adalah bagian dari nilai tambah yang kami sediakan untuk pelanggan setia kami.</p>
 </article>
 <article aria-labelledby="historyHeading" class="card">
@@ -1010,10 +814,10 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 </article>
 </aside>
 </div>
-</section>
+</section><section class="container" id="why-us"><h2>Mengapa Memilih Kami</h2><ul class="highlights"><article class="card"><h3>Ori &amp; Terjamin</h3><p class="muted">Setiap produk melalui pengecekan batch dan kondisi.</p></article><article class="card"><h3>Pengiriman Sigap</h3><p class="muted">Packing aman dan proses kirim cepat sesuai area Anda.</p></article><article class="card"><h3>Konsultasi Personal</h3><p class="muted">Rekomendasi aroma berdasarkan gaya &amp; kebutuhan sehari-hari.</p></article><article class="card"><h3>Dukungan Reseller</h3><p class="muted">Materi produk rapi, tips display, dan update stok berkala.</p></article><article class="card"><h3>Respons Ramah</h3><p class="muted">Tanggapan cepat untuk pertanyaan, klaim, dan after-sales.</p></article></ul></section><section class="container" id="process"><h2>Cara Kami Bekerja</h2><p>Sourcing tepercaya → QC batch &amp; segel → Foto sebelum kirim → Packing aman → Pengiriman cepat → After-sales ramah.</p></section><section class="container" id="reseller"><h2>Program Reseller / Retailer</h2><p>Mulai kerja sama dengan proses onboarding yang ringan. Kami menyediakan kurasi best-seller, materi visual produk, serta panduan penataan rak agar penjualan lebih lancar. Kuantitas pembelian fleksibel dan kami memberi rekomendasi yang sesuai profil toko Anda.</p><ul><li>Mulai dari kuantitas yang fleksibel.</li><li>Update stok dan panduan produk yang rapi.</li><li>Rekomendasi display dan penjualan yang praktis.</li></ul><p class="muted">(Tambahkan detail MOQ/lead time/metode bayar sesuai kebijakan Anda.)</p></section>
 <!-- Products / Highlights -->
 <section aria-labelledby="productsHeading" class="container" data-animate="" id="products">
-<h2 id="productsHeading">Produk &amp; Layanan Utama</h2>
+<h2 id="productsHeading">Produk &amp; Layanan Utama</h2><p class="muted">Koleksi kami disusun agar mudah dipilih: Top Notes memberi kesan pertama yang segar, Middle menghadirkan karakter utama, dan Base memastikan ketahanan aroma. Pilih kategori favorit Anda: Floral • Fresh • Woody • Sweet.</p>
 <div class="highlights">
 <article aria-labelledby="p1" class="card">
 <h3 id="p1">Reseller &amp; Grosir Parfum Branded</h3>
@@ -1347,7 +1151,7 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 </div>
 <div style="display:flex;justify-content:center;margin:1.5rem 0 0.5rem 0;"><a class="btn primary" href="https://diraccc.github.io/insights/">Web Insights</a></div></section>
 </main>
-<footer class="site-footer" role="contentinfo">
+<section class="container" id="cta-bottom"><h2>Butuh saran cepat?</h2><p><a href="https://wa.me/6281937036039" rel="noopener" target="_blank">Chat WhatsApp</a> untuk rekomendasi aroma sesuai kegiatan Anda hari ini—kami bantu pilih yang paling cocok.</p></section><footer class="site-footer" role="contentinfo"><p><strong>Dirac Of Fragrance</strong> — wangi yang menyempurnakan momen.</p>
 <div class="container footer-grid">
 <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap">
 <div>
@@ -1941,63 +1745,5 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 });
 </script>
-<div aria-hidden="true" id="enh-sticky"><div class="enh-container"><a class="enh-btn primary enh-sans" href="https://wa.me/6281937036039" rel="noopener" target="_blank">Chat WhatsApp</a><a class="enh-btn enh-sans" href="#produk">Lihat Katalog</a></div></div><script id="enhanced-ui-script">
-/* Enhancement Layer JS (safe & inert until body.enhanced-ui is present) */
-(function(){
-  // Guard: do nothing unless enhanced-ui is present
-  function init(){
-    if(!document.body.classList.contains('enhanced-ui')) return;
-
-    // Scroll Reveal: simple IntersectionObserver
-    const els = document.querySelectorAll('[data-sr]');
-    if('IntersectionObserver' in window && els.length){
-      const io = new IntersectionObserver((entries)=>{
-        entries.forEach(e=>{
-          if(e.isIntersecting){ e.target.classList.add('sr-in'); io.unobserve(e.target); }
-        });
-      }, { threshold: 0.12 });
-      els.forEach(el=> io.observe(el));
-    } else {
-      els.forEach(el=> el.classList.add('sr-in'));
-    }
-
-    // Scent chips: build from data attributes if present
-    document.querySelectorAll('[data-scent-top],[data-scent-mid],[data-scent-base]').forEach(card=>{
-      if(card.querySelector('.scent-chips')) return;
-      const wrap = document.createElement('div');
-      wrap.className = 'scent-chips enh-sans';
-      const add = (label, val)=>{
-        if(!val) return;
-        const chip = document.createElement('span');
-        chip.className = 'scent-chip';
-        chip.textContent = label + ': ' + val;
-        wrap.appendChild(chip);
-      };
-      add('Top', card.getAttribute('data-scent-top'));
-      add('Middle', card.getAttribute('data-scent-mid'));
-      add('Base', card.getAttribute('data-scent-base'));
-      if(wrap.childElementCount) card.appendChild(wrap);
-    });
-
-    // Optional: inject hero overlay if a hero block exists
-    const hero = document.querySelector('#hero, .hero, #heroStatic, .hero-section, [data-hero]');
-    if(hero && !hero.querySelector('.hero-overlay')){
-      const ov = document.createElement('div');
-      ov.className = 'hero-overlay';
-      hero.style.position = hero.style.position || 'relative';
-      hero.appendChild(ov);
-    }
-
-    // Announce in console
-    console.log('%cEnhanced UI active','padding:4px 8px;background:#222;color:#fff;border-radius:4px');
-  }
-
-  // Defer to next tick to allow class toggles
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', init);
-  }else{
-    init();
-  }
-})();
-</script></body>
+</body>
 </html>
