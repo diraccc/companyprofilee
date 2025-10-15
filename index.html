@@ -558,7 +558,6 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
     transform: translateY(0) scale(1);
   }
 </style>
-
 <style>
   /* Utility: 16:9 media wrapper for promo image */
   .media-16x9{position:relative;width:100%;height:0;padding-top:56.25%;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));}
@@ -566,7 +565,6 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
   /* Center CTA below the image */
   .center-cta{display:flex;justify-content:center;padding:0.8rem 1rem 1rem 1rem}
 </style>
-
 <style>
 /* Promo 16:9 – Ken Burns Crossfade (5s cadence), slim frame */
 #promo-xerjoff{ --hold:5s; --n:9; --dur:calc(var(--hold) * var(--n)); }
@@ -631,7 +629,6 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
   #promo-xerjoff .slides { border-radius: 8px; }
 }
 </style>
-
 <style id="shine-sweep">
 :root{ --shine-duration: 1.8s; --shine-alpha: .32; }
 .shine-sweep{ position: relative; }
@@ -654,8 +651,203 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
   .shine-sweep::before{ animation: none !important; opacity: 0 !important; }
 }
 </style>
+<style id="enhanced-ui-styles">
+/* =========================
+   ENHANCEMENT LAYER (INERT BY DEFAULT)
+   Activate by adding class="enhanced-ui" to <body>.
+   This will NOT affect default look unless enabled.
+   ========================= */
+:root{
+  --enh-maxw: 1200px;
+  --enh-radius: 12px;
+  --enh-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  --enh-transition: 200ms ease;
+  --enh-spacing-lg: 96px;
+  --enh-spacing-md: 48px;
+  --enh-spacing-sm: 16px;
 
-</head>
+  /* Luxe Nocturne */
+  --lux-bg: #0B0D10;
+  --lux-ink: #EDEAE6;
+  --lux-muted: rgba(255,255,255,0.62);
+  --lux-gold: #C6A867;
+
+  /* Soft Nude */
+  --nude-bg: #FAF7F2;
+  --nude-ink: #1F1F23;
+  --nude-muted: rgba(0,0,0,0.60);
+  --nude-taupe: #8A7D73;
+}
+
+/* Theme containers: ONLY apply when .enhanced-ui is present */
+.enhanced-ui.theme-luxe{
+  background-color: var(--lux-bg);
+  color: var(--lux-ink);
+}
+.enhanced-ui.theme-nude{
+  background-color: var(--nude-bg);
+  color: var(--nude-ink);
+}
+
+/* Typography (scoped) */
+.enhanced-ui .enh-display{
+  font-family: "Playfair Display", serif;
+  letter-spacing: .3px;
+}
+.enhanced-ui .enh-sans{
+  font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
+}
+
+/* Container width helper */
+.enhanced-ui .enh-container{
+  max-width: var(--enh-maxw);
+  margin-inline: auto;
+  padding-inline: 16px;
+}
+
+/* Hero overlay (inert by default) */
+.hero-overlay{
+  display: none;
+}
+.enhanced-ui .hero-overlay{
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 500px at 70% 20%, rgba(0,0,0,.45), transparent 60%),
+    linear-gradient(to bottom, rgba(0,0,0,.35), rgba(0,0,0,0) 50%);
+}
+
+/* Card polish (only when enhanced) */
+.enhanced-ui .enh-card{
+  border-radius: var(--enh-radius);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  transition: transform var(--enh-transition), box-shadow var(--enh-transition);
+  overflow: hidden;
+}
+.enhanced-ui .enh-card:hover{
+  transform: translateY(-4px);
+  box-shadow: var(--enh-shadow);
+}
+
+/* Buttons (scoped) */
+.enhanced-ui .enh-btn{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  text-decoration: none;
+  transition: transform var(--enh-transition), box-shadow var(--enh-transition), opacity var(--enh-transition);
+  will-change: transform;
+}
+.enhanced-ui.theme-luxe .enh-btn.primary{
+  background: var(--lux-gold);
+  color: #0B0D10;
+  border-color: var(--lux-gold);
+}
+.enhanced-ui.theme-nude .enh-btn.primary{
+  background: var(--nude-taupe);
+  color: #fff;
+  border-color: var(--nude-taupe);
+}
+.enhanced-ui .enh-btn:hover{ transform: translateY(-2px); box-shadow: var(--enh-shadow); }
+.enhanced-ui .enh-btn:active{ transform: translateY(0); opacity: .9; }
+
+/* Scent chips (appear only if created by JS) */
+.enhanced-ui .scent-chips{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.enhanced-ui .scent-chip{
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: .8;
+}
+
+/* Scroll reveal */
+.enhanced-ui [data-sr]{
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 420ms ease, transform 420ms ease;
+}
+.enhanced-ui [data-sr].sr-in{
+  opacity: 1;
+  transform: none;
+}
+
+/* Sticky CTA (hidden by default until enhanced) */
+#enh-sticky{
+  display: none;
+}
+.enhanced-ui #enh-sticky{
+  position: fixed;
+  left: 0; right: 0; bottom: 16px;
+  margin: 0 auto;
+  width: min(680px, calc(100% - 32px));
+  z-index: 9999;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  background: rgba(0,0,0,.5);
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+.enhanced-ui.theme-nude #enh-sticky{
+  background: rgba(255,255,255,.7);
+  color: var(--nude-ink);
+}
+
+/* Testimonial slider hint preview (generic) */
+.enhanced-ui .enh-slider{
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 80%;
+  gap: 24px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 8px;
+}
+.enhanced-ui .enh-slide{
+  scroll-snap-align: start;
+}
+.enhanced-ui .enh-slider::-webkit-scrollbar{
+  height: 6px;
+}
+.enhanced-ui .enh-slider::-webkit-scrollbar-thumb{
+  background: rgba(0,0,0,.25);
+  border-radius: 999px;
+}
+
+/* Decorative subtle background noise (opt-in) */
+.enhanced-ui .bg-noise{
+  position: absolute; inset: -1px;
+  pointer-events: none;
+  opacity: .03;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width=\"100\" height=\"100\"><filter id=\"n\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"0.8\" numOctaves=\"4\" stitchTiles=\"stitch\"/></filter><rect width=\"100%\" height=\"100%\" filter=\"url(%23n)\" opacity=\"1\"/></svg>');
+}
+
+/* Utilities */
+.enhanced-ui .muted{ opacity: .7; }
+.enhanced-ui .enh-grid{
+  display: grid;
+  gap: 24px;
+}
+@media (min-width: 768px){
+  .enhanced-ui .enh-grid.cols-3{ grid-template-columns: repeat(3, 1fr); }
+  .enhanced-ui .enh-grid.cols-4{ grid-template-columns: repeat(4, 1fr); }
+}
+</style><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="True" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=Playfair+Display:wght@600;700&amp;display=swap" rel="stylesheet"/></head>
 <body>
 <header aria-label="Header utama Dirac Of Fragrance" class="site-header" role="banner">
 <div class="container topbar">
@@ -799,11 +991,11 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 <h3 id="orgHeading">Founder Perusahaan</h3>
 <div class="team-card" style="flex-direction:column;align-items:flex-start;">
 <div style="display:flex;gap:0.6rem;align-items:center;width:100%">
-<img alt="Foto A. Zaenuddin - CEO" loading="lazy" src="founder1.JPG" style="width:56px;height:56px;border-radius:8px">
+<img alt="Foto A. Zaenuddin - CEO" loading="lazy" src="founder1.JPG" style="width:56px;height:56px;border-radius:8px"/>
 <div>
 <strong>A. Zaenuddin</strong><div class="muted">CEO &amp; Founder</div>
 </div>
-</img></div>
+</div>
 <p class="muted" style="margin-top:0.6rem">Bertanggung jawab mengawasi hubungan dengan pemasok serta strategi pertumbuhan pasar dan semua transaksi oleh karyawan dan buyer.</p>
 </div>
 <div class="team-card" style="flex-direction:column;align-items:flex-start;margin-top:0.6rem">
@@ -870,27 +1062,25 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 </section>
 <!-- Clients & Testimonials -->
 <!-- BEGIN: Promo image under XERJOFF with Web To Order button -->
-<section class="container" id="promo-xerjoff" data-animate>
-  <div class="promo16x9" style="background:transparent;box-shadow:none;border:none;margin:0;">
-    <div class="stage">
-      <figure class="slide" style="--i:0"><div class="media"><img src="s1.PNG" alt="" loading="lazy"/></div></figure>
-      <figure class="slide" style="--i:1"><div class="media"><img src="s2.PNG" alt="" loading="lazy"/></div></figure>
-      <figure class="slide" style="--i:2"><div class="media"><img src="s3.PNG" alt="" loading="lazy"/></div></figure>
-      <figure class="slide" style="--i:3"><div class="media"><img src="s4.PNG" alt="" loading="lazy"/></div></figure>
-      <figure class="slide" style="--i:4"><div class="media"><img src="s5.PNG" alt="" loading="lazy"/></div></figure>
-      <figure class="slide" style="--i:5"><div class="media"><img src="s6.PNG" alt="" loading="lazy"/></div></figure>
-      <figure class="slide" style="--i:6"><div class="media"><img src="s7.PNG" alt="" loading="lazy"/></div></figure>
-      <figure class="slide" style="--i:7"><div class="media"><img src="s8.PNG" alt="" loading="lazy"/></div></figure>
-      <figure class="slide" style="--i:8"><div class="media"><img src="s9.PNG" alt="" loading="lazy"/></div></figure>
-    </div>
-  </div>
-  <div class="center-cta" style="padding-top:0.6rem">
-    <a class="btn primary" href="https://diracscent.github.io/Company/">Web To Order</a>
-  </div>
+<section class="container" data-animate="" id="promo-xerjoff">
+<div class="promo16x9" style="background:transparent;box-shadow:none;border:none;margin:0;">
+<div class="stage">
+<figure class="slide" style="--i:0"><div class="media"><img alt="" loading="lazy" src="s1.PNG"/></div></figure>
+<figure class="slide" style="--i:1"><div class="media"><img alt="" loading="lazy" src="s2.PNG"/></div></figure>
+<figure class="slide" style="--i:2"><div class="media"><img alt="" loading="lazy" src="s3.PNG"/></div></figure>
+<figure class="slide" style="--i:3"><div class="media"><img alt="" loading="lazy" src="s4.PNG"/></div></figure>
+<figure class="slide" style="--i:4"><div class="media"><img alt="" loading="lazy" src="s5.PNG"/></div></figure>
+<figure class="slide" style="--i:5"><div class="media"><img alt="" loading="lazy" src="s6.PNG"/></div></figure>
+<figure class="slide" style="--i:6"><div class="media"><img alt="" loading="lazy" src="s7.PNG"/></div></figure>
+<figure class="slide" style="--i:7"><div class="media"><img alt="" loading="lazy" src="s8.PNG"/></div></figure>
+<figure class="slide" style="--i:8"><div class="media"><img alt="" loading="lazy" src="s9.PNG"/></div></figure>
+</div>
+</div>
+<div class="center-cta" style="padding-top:0.6rem">
+<a class="btn primary" href="https://diracscent.github.io/Company/">Web To Order</a>
+</div>
 </section>
 <!-- END: Promo image under XERJOFF with Web To Order button -->
-
-
 <section aria-labelledby="clientsHeading" class="container" data-animate="" id="clients">
 <h2 id="clientsHeading">Klien &amp; Testimoni</h2>
 <!-- Client logos -->
@@ -1610,7 +1800,6 @@ document.querySelectorAll('a[href^="#"]').forEach(a=>{
 <path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232"></path>
 </svg>
 </a>
-
 <style>
 /* --- Extra micro-animations (no layout shift) --- */
 @media (prefers-reduced-motion: no-preference){
@@ -1642,7 +1831,6 @@ document.querySelectorAll('a[href^="#"]').forEach(a=>{
 }
 [data-animate].animated > h2{ animation-play-state: running; }
 </style>
-
 <script>
 // --- Activate Career form without changing layout/content ---
 document.addEventListener('DOMContentLoaded', function(){
@@ -1696,8 +1884,6 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 });
 </script>
-
-
 <script id="shine-sweep-js">
 document.addEventListener('DOMContentLoaded', function(){
   // Target only text elements so readability stays high
@@ -1717,8 +1903,6 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 });
 </script>
-
-
 <script>
 // Contact form handler — validate and send to WhatsApp (fallback to email)
 document.addEventListener('DOMContentLoaded', function(){
@@ -1757,6 +1941,63 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 });
 </script>
+<div aria-hidden="true" id="enh-sticky"><div class="enh-container"><a class="enh-btn primary enh-sans" href="https://wa.me/6281937036039" rel="noopener" target="_blank">Chat WhatsApp</a><a class="enh-btn enh-sans" href="#produk">Lihat Katalog</a></div></div><script id="enhanced-ui-script">
+/* Enhancement Layer JS (safe & inert until body.enhanced-ui is present) */
+(function(){
+  // Guard: do nothing unless enhanced-ui is present
+  function init(){
+    if(!document.body.classList.contains('enhanced-ui')) return;
 
-</body>
+    // Scroll Reveal: simple IntersectionObserver
+    const els = document.querySelectorAll('[data-sr]');
+    if('IntersectionObserver' in window && els.length){
+      const io = new IntersectionObserver((entries)=>{
+        entries.forEach(e=>{
+          if(e.isIntersecting){ e.target.classList.add('sr-in'); io.unobserve(e.target); }
+        });
+      }, { threshold: 0.12 });
+      els.forEach(el=> io.observe(el));
+    } else {
+      els.forEach(el=> el.classList.add('sr-in'));
+    }
+
+    // Scent chips: build from data attributes if present
+    document.querySelectorAll('[data-scent-top],[data-scent-mid],[data-scent-base]').forEach(card=>{
+      if(card.querySelector('.scent-chips')) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'scent-chips enh-sans';
+      const add = (label, val)=>{
+        if(!val) return;
+        const chip = document.createElement('span');
+        chip.className = 'scent-chip';
+        chip.textContent = label + ': ' + val;
+        wrap.appendChild(chip);
+      };
+      add('Top', card.getAttribute('data-scent-top'));
+      add('Middle', card.getAttribute('data-scent-mid'));
+      add('Base', card.getAttribute('data-scent-base'));
+      if(wrap.childElementCount) card.appendChild(wrap);
+    });
+
+    // Optional: inject hero overlay if a hero block exists
+    const hero = document.querySelector('#hero, .hero, #heroStatic, .hero-section, [data-hero]');
+    if(hero && !hero.querySelector('.hero-overlay')){
+      const ov = document.createElement('div');
+      ov.className = 'hero-overlay';
+      hero.style.position = hero.style.position || 'relative';
+      hero.appendChild(ov);
+    }
+
+    // Announce in console
+    console.log('%cEnhanced UI active','padding:4px 8px;background:#222;color:#fff;border-radius:4px');
+  }
+
+  // Defer to next tick to allow class toggles
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  }else{
+    init();
+  }
+})();
+</script></body>
 </html>
