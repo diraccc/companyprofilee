@@ -420,6 +420,61 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 
 /* video support for hero - ensure full cover like images */
 .slide video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% center;display:block}
+
+/* --- Scroll progress bar --- */
+#scroll-progress{
+  position:fixed;
+  top:0; left:0;
+  height:3px;
+  width:0%;
+  background:var(--accent);
+  z-index:1000;
+  transform-origin:0 0;
+}
+/* --- Logo marquee --- */
+.logo-marquee{ 
+  margin-top:1rem;
+  overflow:hidden;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.06);
+  background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+}
+.logo-marquee .track{
+  display:flex;
+  align-items:center;
+  gap:40px;
+  padding:18px 24px;
+  will-change: transform;
+  animation: marqueeScroll 28s linear infinite;
+}
+.logo-marquee img{
+  height:34px;
+  width:auto;
+  filter: grayscale(1) contrast(1.1);
+  opacity:0.85;
+  transition: filter .2s ease, opacity .2s ease, transform .2s ease;
+}
+.logo-marquee img:hover{
+  filter:none;
+  opacity:1;
+  transform: translateY(-2px);
+}
+.logo-marquee:hover .track{ animation-play-state: paused; }
+@keyframes marqueeScroll{
+  from{ transform: translateX(0); }
+  to{ transform: translateX(-50%); }
+}
+/* --- Magnetic CTA (subtle) --- */
+.btn.primary, a.cta{
+  position:relative;
+  will-change: transform;
+  transition: transform .08s ease;
+}
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .logo-marquee .track{ animation: none; }
+  #scroll-progress{ display:none; }
+}
 </style>
 <!-- Enhanced wow animations -->
 <style>
@@ -673,8 +728,8 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 @media (prefers-reduced-motion: reduce){
   .shine{ animation: none !important; color: inherit; -webkit-background-clip: initial; background-clip: initial; }
 }
-</style></head>
-<body>
+</style><script type="application/ld+json">{"@context": "https://schema.org", "@type": "Organization", "name": "Dirac Of Fragrance", "url": "", "logo": "images/favicon.png", "telePhone": "+6281937036039", "sameAs": []}</script></head>
+<body><div aria-hidden="true" id="scroll-progress"></div>
 <header aria-label="Header utama Dirac Of Fragrance" class="site-header" role="banner">
 <div class="container topbar">
 <div aria-label="Logo Dirac Of Fragrance" class="brand" role="img">
@@ -711,7 +766,7 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 <div aria-label="Hero (statik)" class="slider" id="heroStatic" role="region">
 <figure aria-label="Hero" class="slide" role="group" style="margin:0">
 <div class="media">
-<video aria-hidden="false" autoplay="" id="hero-video" loop="" muted="" playsinline="" poster="images/slide1-16x9.jpg" preload="auto">
+<video aria-hidden="false" autoplay="" id="hero-video" loop="" muted="" playsinline="" poster="images/slide1-16x9.jpg" preload="metadata">
 <source src="hero.MOV" type="video/quicktime"/>
         Your browser does not support the video tag.
       </video>
@@ -888,7 +943,7 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 </section>
 <!-- Clients & Testimonials -->
 <!-- BEGIN: Promo image under XERJOFF with Web To Order button -->
-<section class="container" data-animate="" id="promo-xerjoff">
+<section class="container" data-animate="" id="clients"><h2>Dipercaya oleh Mitra &amp; Brand</h2><div aria-label="Logo mitra/brand" class="logo-marquee" id="clients-marquee"><div class="track"><img alt="Logo mitra" loading="lazy" src="/logos/client1.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client2.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client3.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client4.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client5.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client6.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client1.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client2.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client3.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client4.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client5.png"/><img alt="Logo mitra" loading="lazy" src="/logos/client6.png"/></div></div></section><section class="container" data-animate="" id="promo-xerjoff">
 <div class="promo16x9" style="background:transparent;box-shadow:none;border:none;margin:0;">
 <div class="stage">
 <figure class="slide" style="--i:0"><div class="media"><img alt="" loading="lazy" src="s1.PNG"/></div></figure>
@@ -1767,5 +1822,42 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 });
 </script>
-</body>
+<script>
+// --- Scroll progress bar ---
+(function(){
+  var bar = document.getElementById('scroll-progress');
+  if(!bar) return;
+  var ticking = false;
+  function onScroll(){
+    if(ticking) return;
+    ticking = true;
+    requestAnimationFrame(function(){
+      var h = document.documentElement;
+      var scrolled = h.scrollTop || document.body.scrollTop;
+      var height = h.scrollHeight - h.clientHeight;
+      var p = height>0 ? (scrolled/height)*100 : 0;
+      bar.style.width = p.toFixed(2) + '%';
+      ticking = false;
+    });
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+// --- Magnetic CTA (subtle) ---
+(function(){
+  var targets = Array.from(document.querySelectorAll('#contactCTABtn, #viewProductsBtn, a.cta'));
+  var strength = 8; // px
+  targets.forEach(function(el){
+    var rect;
+    function reset(){ el.style.transform = 'translate3d(0,0,0)'; }
+    el.addEventListener('mousemove', function(e){
+      rect = rect || el.getBoundingClientRect();
+      var x = (e.clientX - rect.left)/rect.width - 0.5;
+      var y = (e.clientY - rect.top)/rect.height - 0.5;
+      el.style.transform = 'translate3d('+(x*strength)+'px,'+(y*strength)+'px,0)';
+    });
+    el.addEventListener('mouseleave', function(){ reset(); rect = null; });
+  });
+})();
+</script></body>
 </html>
