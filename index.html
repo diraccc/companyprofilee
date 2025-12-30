@@ -655,6 +655,69 @@ Note: Autoplay video will be embedded only if the mp4 was present. -->
 }
 </style>
 
+
+<!-- START: Added button idle + press effects (do not remove) -->
+<style>
+/* Fancy idle animation (gradient move + float + glow) and press feedback (3D press + ripple)
+   Applied only when user allows motion (prefers-reduced-motion: no-preference). */
+@media (prefers-reduced-motion: no-preference){
+  .btn.primary {
+    /* keep existing gradient but enhance movement */
+    background: linear-gradient(90deg, #6a11cb, #2575fc, #00d2ff);
+    background-size: 200% 200%;
+    animation: btnGrad 5s linear infinite, btnFloat 4.2s ease-in-out infinite, btnGlow 3.8s ease-in-out infinite;
+    will-change: transform, box-shadow, background-position;
+    position: relative; /* for ripple */
+    overflow: visible;
+    display: inline-block; /* ensure ripple positioning works on anchors */
+  }
+  @keyframes btnGrad{
+    0%{ background-position: 0% 50% }
+    50%{ background-position: 100% 50% }
+    100%{ background-position: 0% 50% }
+  }
+  @keyframes btnFloat{
+    0%{ transform: translateY(0) }
+    50%{ transform: translateY(-6px) }
+    100%{ transform: translateY(0) }
+  }
+  @keyframes btnGlow{
+    0%{ box-shadow: 0 10px 32px rgba(13,110,253,0.14) }
+    50%{ box-shadow: 0 20px 46px rgba(13,110,253,0.22) }
+    100%{ box-shadow: 0 10px 32px rgba(13,110,253,0.14) }
+  }
+
+  /* Ripple element */
+  .btn.primary .__ripple {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.42);
+    pointer-events: none;
+    transform: scale(0);
+    will-change: transform, opacity;
+    mix-blend-mode: screen;
+    opacity: 1;
+  }
+  @keyframes __rippleAnim {
+    to { transform: scale(4); opacity: 0; }
+  }
+
+  /* Pressed (tactile) state */
+  .btn.primary.pressed {
+    transform: translateY(6px) scale(0.995) !important;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.28) !important;
+    transition: transform .08s ease, box-shadow .12s ease;
+    animation-play-state: paused; /* pause idle float while pressed */
+  }
+}
+
+/* Respect reduced motion: remove flourish but keep functionality */
+@media (prefers-reduced-motion: reduce){
+  .btn.primary { animation: none !important; transition: none !important; }
+}
+</style>
+<!-- END: Added button idle + press effects -->
+
 </head>
 <body>
 <header aria-label="Header utama Dirac Of Fragrance" class="site-header" role="banner">
@@ -1832,6 +1895,80 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 });
 </script>
+
+
+<!-- START: Button ripple + press JS (non-destructive) -->
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // User prefers reduced motion — don't attach animations.
+    return;
+  }
+  // Only attach to .btn.primary elements (keeps all original behavior intact)
+  const buttons = Array.from(document.querySelectorAll('.btn.primary'));
+  buttons.forEach(btn => {
+    // Ensure the button/anchor can contain absolute children
+    btn.style.position = btn.style.position || 'relative';
+    btn.style.overflow = btn.style.overflow || 'visible';
+    // create ripple on pointerdown (works for mouse & touch)
+    function makeRipple(ev){
+      // find bounding rect
+      const rect = btn.getBoundingClientRect();
+      // compute coordinates (center for keyboard events)
+      const clientX = (ev && typeof ev.clientX === 'number') ? ev.clientX : (rect.left + rect.width/2);
+      const clientY = (ev && typeof ev.clientY === 'number') ? ev.clientY : (rect.top + rect.height/2);
+      const size = Math.max(rect.width, rect.height) * 1.2;
+      const el = document.createElement('span');
+      el.className = '__ripple';
+      el.style.width = el.style.height = size + 'px';
+      el.style.left = (clientX - rect.left - size/2) + 'px';
+      el.style.top = (clientY - rect.top - size/2) + 'px';
+      // Add to DOM
+      btn.appendChild(el);
+      // trigger animation (use requestAnimationFrame to ensure styles applied)
+      requestAnimationFrame(function(){
+        el.style.transition = 'transform 600ms cubic-bezier(.2,.8,.2,1), opacity 600ms linear';
+        el.style.transform = 'scale(4)';
+        el.style.opacity = '0';
+      });
+      // remove after animation
+      setTimeout(()=> { try { el.remove(); } catch(e){} }, 700);
+    }
+
+    // Press visuals
+    function onPointerDown(e){
+      // do not block default behavior (keeps link navigation & other handlers)
+      btn.classList.add('pressed');
+      makeRipple(e);
+    }
+    function onPointerUp(){
+      // small delay so user feels the press
+      setTimeout(()=> btn.classList.remove('pressed'), 110);
+    }
+
+    btn.addEventListener('mousedown', onPointerDown);
+    btn.addEventListener('touchstart', function(e){ onPointerDown(e.touches ? e.touches[0] : e); }, {passive:true});
+    window.addEventListener('mouseup', onPointerUp);
+    window.addEventListener('touchend', onPointerUp);
+
+    // Keyboard support (Space / Enter)
+    btn.addEventListener('keydown', function(e){
+      if (e.code === 'Space' || e.code === 'Enter') {
+        if (e.code === 'Space') e.preventDefault(); // avoid page scroll on space
+        btn.classList.add('pressed');
+        // synthesize a centered ripple
+        makeRipple(null);
+      }
+    });
+    btn.addEventListener('keyup', function(e){
+      if (e.code === 'Space' || e.code === 'Enter') {
+        setTimeout(()=> btn.classList.remove('pressed'), 100);
+      }
+    });
+  });
+});
+</script>
+<!-- END: Button ripple + press JS -->
 
 </body>
 </html>
