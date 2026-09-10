@@ -1385,14 +1385,6 @@
     });
   };
 
-  window.fetch(window.DiracRoutes.api('/api/health') + '?action=domain_dashboard_me', {
-    method:'GET',
-    mode:'cors',
-    credentials:'include',
-    cache:'no-store',
-    redirect:'error',
-    headers:{'Accept':'application/json'}
-  }).catch(function(){});
 })();
 </script>
 <script id="dirac-global-pref-storage-guard-v2">
@@ -8163,7 +8155,7 @@ html body #diracNavigationBusy{background:var(--dirac-solid-canvas)!important;}
     function unlockPage(){document.body.classList.remove('gate-locked','gate-checking');document.documentElement.setAttribute('data-product-unlocked','true');}
     function enforceProductAccess(){document.body.classList.add('gate-locked','gate-checking');verifyExistingLoginSession().then(function(ok){document.body.classList.remove('gate-checking');if(ok&&authAllowed())unlockPage();else lockPage();}).catch(function(){document.body.classList.remove('gate-checking');clearBackendVerification();lockPage();});}
     window.diracProductGate={enforce:enforceProductAccess,authAllowed:authAllowed,logout:function(){if(typeof window.__DIRAC_PROTECTED_FORCE_LOGOUT__==='function'){window.__DIRAC_PROTECTED_FORCE_LOGOUT__('manual');return;}try{localStorage.removeItem(AUTH_KEY);localStorage.removeItem(A2F_KEY);localStorage.removeItem(A2F_READY_KEY);localStorage.removeItem('dirac_dashboard_gate_v1')}catch(e){};clearBackendVerification();lockPage();location.href=window.DiracRoutes.url('auth');}};
-    document.addEventListener('DOMContentLoaded',function(){enforceProductAccess();window.addEventListener('storage',function(e){if(e&&/^(dirac_auth_session_v1|dirac_auth_a2f_v1|dirac_auth_a2f_dashboard_ready_v1|dirac_dashboard_gate_v1)$/.test(e.key||''))enforceProductAccess();});document.addEventListener('visibilitychange',function(){if(!document.hidden)enforceProductAccess();});window.addEventListener('pageshow',function(e){if(e.persisted)enforceProductAccess();});setInterval(function(){if(authAllowed())enforceProductAccess();},120000);});
+    document.addEventListener('DOMContentLoaded',function(){lockPage();});
   })();
   </script>
 
@@ -17831,8 +17823,6 @@ html[data-effective-theme="light"] #themeModal .theme-actions{background:rgba(25
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once:true}); else boot();
   window.addEventListener('pageshow', boot);
   window.addEventListener('focus', setFieldHardening);
-  setTimeout(boot, 300);
-  setTimeout(boot, 1200);
 })();
 </script>
 <script id="dirac-navigation-busy-v337">
