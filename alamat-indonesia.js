@@ -50,18 +50,47 @@
     try{
       forceIndonesiaDefault();
       var country = countryEl();
-      if(country && country.value === ID_COUNTRY && addressSelectNeedsRegionData()) fillSelect('buyerRegion', PLACEHOLDER.region, ID_ADDRESS.p, false, false);
-      if(country && country.value === ID_COUNTRY){
-        var region = byId('buyerRegion');
-        var city = byId('buyerCity');
-        var district = byId('buyerDistrict');
-        var village = byId('buyerVillage');
-        var postal = byId('buyerPostalCode');
-        if(region && region.value && (!city || city.options.length <= 1)) populateCities();
-        if(city && city.value && (!district || district.options.length <= 1)) populateDistricts();
-        if(district && district.value && (!village || village.options.length <= 1)) populateVillages();
-        if(village && village.value && (!postal || postal.options.length <= 1)) populatePostal();
+      if(!country) return;
+      if(country.value !== ID_COUNTRY){
+        var changed = country.dataset.diracIntlCountry !== country.value;
+        var regionsIntl = WORLD_REGIONS[country.value] || [];
+        var regionIntl = byId('buyerRegionInternationalInput');
+        var regionSelectIntl = byId('buyerRegion');
+        var cityIntl = byId('buyerCityInternationalInput');
+        var districtIntl = byId('buyerDistrictInternationalInput');
+        var villageIntl = byId('buyerVillageInternationalInput');
+        var postalIntl = byId('buyerPostalCodeInternationalInput');
+        var citySelectIntl = byId('buyerCity');
+        var districtSelectIntl = byId('buyerDistrict');
+        var villageSelectIntl = byId('buyerVillage');
+        var postalSelectIntl = byId('buyerPostalCode');
+        var regionModeMissing = regionsIntl.length ?
+          (!regionSelectIntl || regionSelectIntl.hidden || regionSelectIntl.disabled || !regionSelectIntl.options || regionSelectIntl.options.length <= 1 || !existsIn(regionsIntl, regionSelectIntl.options[1].value)) :
+          (!regionIntl || regionIntl.hidden || !regionSelectIntl || !regionSelectIntl.hidden);
+        var modeMissing = regionModeMissing || !cityIntl || !districtIntl || !villageIntl || !postalIntl ||
+          cityIntl.hidden || districtIntl.hidden || villageIntl.hidden || postalIntl.hidden ||
+          !citySelectIntl || !districtSelectIntl || !villageSelectIntl || !postalSelectIntl ||
+          !citySelectIntl.hidden || !districtSelectIntl.hidden || !villageSelectIntl.hidden || !postalSelectIntl.hidden;
+        country.dataset.diracIntlCountry = country.value;
+        if(changed || modeMissing) configureInternationalMode(country.value, changed);
+        return;
       }
+      var previousCountry = country.dataset.diracIntlCountry || '';
+      var changedToIndonesia = !!previousCountry && previousCountry !== ID_COUNTRY;
+      country.dataset.diracIntlCountry = ID_COUNTRY;
+      disableInternationalMode();
+      var region = byId('buyerRegion');
+      var regionNeedsIndonesia = addressSelectNeedsRegionData() || (region && region.options && region.options.length > 1 && !existsIn(ID_ADDRESS.p, region.options[1].value));
+      if(regionNeedsIndonesia) fillSelect('buyerRegion', PLACEHOLDER.region, ID_ADDRESS.p, false, false);
+      if(changedToIndonesia) resetBelow(1);
+      var city = byId('buyerCity');
+      var district = byId('buyerDistrict');
+      var village = byId('buyerVillage');
+      var postal = byId('buyerPostalCode');
+      if(region && region.value && (!city || city.options.length <= 1)) populateCities();
+      if(city && city.value && (!district || district.options.length <= 1)) populateDistricts();
+      if(district && district.value && (!village || village.options.length <= 1)) populateVillages();
+      if(village && village.value && (!postal || postal.options.length <= 1)) populatePostal();
     }catch(_){ }
   }
   function safeTrim(value, max){
@@ -399,7 +428,11 @@
     forceIndonesiaDefault();
     hardenAddressSelects();
     var country = byId('buyerCountry'), region = byId('buyerRegion'), city = byId('buyerCity'), district = byId('buyerDistrict'), village = byId('buyerVillage'), postal = byId('buyerPostalCode'), detail = byId('buyerAddressDetail');
-    if(!country || country.dataset.diracAddressBound === 'true') return;
+    if(!country) return;
+    if(country.dataset.diracAddressBound === 'true'){
+      safeRehydrateAddress('rebind');
+      return;
+    }
     country.dataset.diracAddressBound = 'true';
     country.addEventListener('change', populateRegions, true);
     if(region) region.addEventListener('change', populateCities, true);
