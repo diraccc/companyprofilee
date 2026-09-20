@@ -424,9 +424,184 @@
       el.classList.add('full');
     });
   }
+  var ADDRESS_HISTORY_PREFIX = 'dirac_address_history_v1_';
+  function addressHistoryEmail(){
+    var email = byId('buyerEmail');
+    var value = safeTrim(email && email.value, 120).toLowerCase();
+    if(!value || /\s/.test(value) || value.indexOf('@') < 1 || value.lastIndexOf('.') < value.indexOf('@') + 2) return '';
+    return value;
+  }
+  function addressHistoryKey(){
+    var email = addressHistoryEmail();
+    if(!email || !window.crypto || !window.crypto.subtle || typeof window.TextEncoder !== 'function' || typeof window.btoa !== 'function') return Promise.resolve('');
+    return window.crypto.subtle.digest('SHA-256', new window.TextEncoder().encode(email)).then(function(buffer){
+      var raw = String.fromCharCode.apply(null, new Uint8Array(buffer));
+      return ADDRESS_HISTORY_PREFIX + window.btoa(raw).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    }).catch(function(){ return ''; });
+  }
+  function normalizeAddressHistoryRecord(item){
+    if(!item || typeof item !== 'object' || Number(item.v) !== 1) return null;
+    var country = safeTrim(item.country, 2).toUpperCase();
+    var region = safeTrim(item.region, 96);
+    var city = safeTrim(item.city, 96);
+    var district = safeTrim(item.district, 96);
+    var village = safeTrim(item.village, 96);
+    var postal = safeTrim(item.postal, 24);
+    var detail = safeTrim(item.detail, 180);
+    var label = safeTrim(item.label, 420);
+    if(!/^[A-Z]{2}$/.test(country) || !region || !city || !district || !village || !postal || !detail || !label) return null;
+    if(hasPayload(region) || hasPayload(city) || hasPayload(district) || hasPayload(village) || hasPayload(postal) || hasPayload(detail)) return null;
+    if(cleanDetail(detail) !== detail || detail.length < 5 || !INTL_TEXT_RE.test(detail)) return null;
+    return {v:1,country:country,region:region,city:city,district:district,village:village,postal:postal,detail:detail,label:label,savedAt:Number(item.savedAt || 0)};
+  }
+  function readAddressHistory(key){
+    if(!key || !window.localStorage) return [null,null,null];
+    try{
+      var parsed = JSON.parse(window.localStorage.getItem(key) || '[]');
+      if(!Array.isArray(parsed)) return [null,null,null];
+      return [normalizeAddressHistoryRecord(parsed[0]), normalizeAddressHistoryRecord(parsed[1]), normalizeAddressHistoryRecord(parsed[2])];
+    }catch(_){ return [null,null,null]; }
+  }
+  function addressHistorySignature(item){
+    if(!item) return '';
+    return [item.country,item.region,item.city,item.district,item.village,item.postal,item.detail].join('\u001f');
+  }
+  function currentAddressHistoryRecord(){
+    var detail = byId('buyerAddressDetail');
+    if(!addressHistoryEmail() || !detail || !validDetail(detail.value)) return null;
+    var country = selectedValue('buyerCountry');
+    var region = selectedValue('buyerRegion');
+    var city = selectedValue('buyerCity');
+    var district = selectedValue('buyerDistrict');
+    var village = selectedValue('buyerVillage');
+    var postal = selectedValue('buyerPostalCode');
+    if(!country || !region || !city || !district || !village || !postal) return null;
+    if(country === ID_COUNTRY){
+      if(!validateSelectedCodes()) return null;
+    }else{
+      if(!internationalValueValid(region,false) || !internationalValueValid(city,false) || !internationalValueValid(district,false) || !internationalValueValid(village,false) || !internationalValueValid(postal,true)) return null;
+    }
+    var label = compose();
+    if(!label) return null;
+    return {v:1,country:country,region:region,city:city,district:district,village:village,postal:postal,detail:safeTrim(detail.value,180),label:safeTrim(label,420),savedAt:Date.now()};
+  }
+  function setAddressHistoryButton(button, item, slot){
+    if(!button) return;
+    if(!item){ button.hidden = true; button.textContent = ''; return; }
+    button.hidden = false;
+    button.textContent = (slot === 1 ? 'Alamat terakhir: ' : 'Alamat tersimpan ' + slot + ': ') + item.label;
+  }
+  function renderAddressHistory(){
+    var box = byId('diracAddressHistoryBox');
+    if(!box) return Promise.resolve(false);
+    return addressHistoryKey().then(function(key){
+      var items = readAddressHistory(key);
+      setAddressHistoryButton(byId('diracAddressHistory1'), items[0], 1);
+      setAddressHistoryButton(byId('diracAddressHistory2'), items[1], 2);
+      setAddressHistoryButton(byId('diracAddressHistory3'), items[2], 3);
+      box.hidden = !(items[0] || items[1] || items[2]);
+      return !box.hidden;
+    });
+  }
+  function rememberCurrentAddress(){
+    var record = currentAddressHistoryRecord();
+    if(!record) return Promise.resolve(false);
+    return addressHistoryKey().then(function(key){
+      if(!key || !window.localStorage) return false;
+      var items = readAddressHistory(key);
+      var signature = addressHistorySignature(record);
+      var next = [record];
+      if(items[0] && addressHistorySignature(items[0]) !== signature) next.push(items[0]);
+      if(next.length < 3 && items[1] && addressHistorySignature(items[1]) !== signature) next.push(items[1]);
+      if(next.length < 3 && items[2] && addressHistorySignature(items[2]) !== signature) next.push(items[2]);
+      try{ window.localStorage.setItem(key, JSON.stringify(next)); }catch(_){ return false; }
+      var status = byId('diracAddressHistoryStatus');
+      if(status) status.textContent = 'Alamat terbaru tersimpan untuk akun ini di perangkat ini.';
+      renderAddressHistory();
+      return true;
+    });
+  }
+  function restoreInternationalHistoryValue(selectId, value){
+    var input = byId(intlInputId(selectId));
+    if(!input || input.hidden) return false;
+    input.value = value;
+    return syncInternationalInput(selectId);
+  }
+  function applyAddressHistoryRecord(record){
+    record = normalizeAddressHistoryRecord(record);
+    if(!record) return false;
+    var country = byId('buyerCountry');
+    var region = byId('buyerRegion');
+    var city = byId('buyerCity');
+    var district = byId('buyerDistrict');
+    var village = byId('buyerVillage');
+    var postal = byId('buyerPostalCode');
+    var detail = byId('buyerAddressDetail');
+    if(!country || !region || !city || !district || !village || !postal || !detail) return false;
+    country.value = record.country;
+    if(country.value !== record.country) return false;
+    populateRegions();
+    if(record.country === ID_COUNTRY){
+      region.value = record.region; if(region.value !== record.region) return false; populateCities();
+      city.value = record.city; if(city.value !== record.city) return false; populateDistricts();
+      district.value = record.district; if(district.value !== record.district) return false; populateVillages();
+      village.value = record.village; if(village.value !== record.village) return false; populatePostal();
+      postal.value = record.postal; if(postal.value !== record.postal || !validateSelectedCodes()) return false;
+    }else{
+      var regions = WORLD_REGIONS[record.country] || [];
+      if(existsIn(regions, record.region)){
+        region.value = record.region;
+        if(region.value !== record.region) return false;
+        populateCities();
+      }else if(regions.length){
+        region.value = '__INTL_MANUAL__';
+        if(region.value !== '__INTL_MANUAL__') return false;
+        populateCities();
+        if(!restoreInternationalHistoryValue('buyerRegion', record.region)) return false;
+      }else if(!restoreInternationalHistoryValue('buyerRegion', record.region)) return false;
+      if(!restoreInternationalHistoryValue('buyerCity', record.city)) return false;
+      if(!restoreInternationalHistoryValue('buyerDistrict', record.district)) return false;
+      if(!restoreInternationalHistoryValue('buyerVillage', record.village)) return false;
+      if(!restoreInternationalHistoryValue('buyerPostalCode', record.postal)) return false;
+    }
+    detail.value = record.detail;
+    compose();
+    var status = byId('diracAddressHistoryStatus');
+    if(status) status.textContent = 'Alamat tersimpan dipilih. Periksa kembali sebelum membuat pesanan.';
+    return true;
+  }
+  function restoreAddressHistorySlot(slot){
+    return addressHistoryKey().then(function(key){
+      var items = readAddressHistory(key);
+      var record = slot === 1 ? items[0] : slot === 2 ? items[1] : items[2];
+      return applyAddressHistoryRecord(record);
+    });
+  }
+  function bindAddressHistory(){
+    var box = byId('diracAddressHistoryBox');
+    if(!box || box.dataset.diracAddressHistoryBound === 'true') return;
+    box.dataset.diracAddressHistoryBound = 'true';
+    var one = byId('diracAddressHistory1');
+    var two = byId('diracAddressHistory2');
+    var three = byId('diracAddressHistory3');
+    var email = byId('buyerEmail');
+    var checkout = byId('checkoutBtn');
+    var send = byId('sendWhatsappBtn');
+    if(one) one.addEventListener('click', function(){ restoreAddressHistorySlot(1); }, false);
+    if(two) two.addEventListener('click', function(){ restoreAddressHistorySlot(2); }, false);
+    if(three) three.addEventListener('click', function(){ restoreAddressHistorySlot(3); }, false);
+    if(email){
+      email.addEventListener('input', renderAddressHistory, false);
+      email.addEventListener('change', renderAddressHistory, false);
+    }
+    if(checkout) checkout.addEventListener('click', renderAddressHistory, false);
+    if(send) send.addEventListener('click', rememberCurrentAddress, false);
+    renderAddressHistory();
+  }
   function bind(){
     forceIndonesiaDefault();
     hardenAddressSelects();
+    bindAddressHistory();
     var country = byId('buyerCountry'), region = byId('buyerRegion'), city = byId('buyerCity'), district = byId('buyerDistrict'), village = byId('buyerVillage'), postal = byId('buyerPostalCode'), detail = byId('buyerAddressDetail');
     if(!country) return;
     if(country.dataset.diracAddressBound === 'true'){
