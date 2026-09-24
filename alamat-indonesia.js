@@ -489,7 +489,20 @@
     if(!button) return;
     if(!item){ button.hidden = true; button.textContent = ''; return; }
     button.hidden = false;
-    button.textContent = (slot === 1 ? 'Alamat terakhir: ' : 'Alamat tersimpan ' + slot + ': ') + item.label;
+    DiracSafeDOM.clear(button);
+    var title = document.createElement('strong');
+    title.textContent = slot === 1 ? 'Alamat terakhir' : 'Alamat tersimpan ' + slot;
+    var detail = document.createElement('span');
+    detail.className = 'dirac-address-history-detail';
+    detail.textContent = item.detail;
+    var location = document.createElement('span');
+    location.className = 'dirac-address-history-location';
+    location.textContent = item.label.split(' | ').filter(function(part){ return !/^Detail:/.test(part); }).map(function(part){
+      return part.replace(/^(?:Negara|Provinsi\/State\/Region|Kota\/Kabupaten\/City|Kecamatan\/District|Desa\/Kelurahan\/Village|Kode Pos):\s*/, '');
+    }).join(', ');
+    button.appendChild(title);
+    button.appendChild(detail);
+    button.appendChild(location);
   }
   function renderAddressHistory(){
     var box = byId('diracAddressHistoryBox');
@@ -568,10 +581,15 @@
     compose();
     var status = byId('diracAddressHistoryStatus');
     if(status) status.textContent = 'Alamat tersimpan dipilih. Periksa kembali sebelum membuat pesanan.';
+    detail.dispatchEvent(new Event('input',{bubbles:true}));
     return true;
   }
+  var addressHistoryRestoreRequest = 0;
   function restoreAddressHistorySlot(slot){
+    var request = ++addressHistoryRestoreRequest;
+    var email = addressHistoryEmail();
     return addressHistoryKey().then(function(key){
+      if(request !== addressHistoryRestoreRequest || !email || email !== addressHistoryEmail()) return false;
       var items = readAddressHistory(key);
       var record = slot === 1 ? items[0] : slot === 2 ? items[1] : items[2];
       return applyAddressHistoryRecord(record);
