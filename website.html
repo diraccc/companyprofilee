@@ -97,16 +97,26 @@
     var text = normalize(value);
     var samples = [text, text.replace(/\/\*[\s\S]{0,256}?\*\//g,''), text.replace(/\/\*[\s\S]{0,256}?\*\//g,' ')];
     if(ssrfUrl(text)) return {detected:true,family:'ssrf',normalized:text};
-    for(var i=0;i<RULES.length;i++) for(var s=0;s<samples.length;s++) if(RULES[i][1].test(samples[s])) return {detected:true,family:RULES[i][0],normalized:text};
+    var restricted = null;
+    for(var i=0;i<RULES.length;i++) for(var s=0;s<samples.length;s++){
+      var match = RULES[i][1].exec(samples[s]);
+      if(!match) continue;
+      var result = {detected:true,family:RULES[i][0],normalized:text,sample:match[0].slice(0,768)};
+      if(RULES[i][0] === 'restricted_keyword'){ restricted=result; continue; }
+      return result;
+    }
+    if(restricted) return restricted;
     if(context && context.ai === true && PROMPT_RULE.test(text)) return {detected:true,family:'prompt_injection',normalized:text};
     return {detected:false,family:'',normalized:text};
   }
   // Browser validation is an additional boundary. Identity and bans remain server-owned.
   var page = document.currentScript.getAttribute('data-page');
-  var incident = null, running = false, finished = false;
+  var incident = null, running = false, finished = false, attempts = 0;
+  var reportProof = null, proofPending = null, resumePending = false, resumeRunning = false, resumeAttempts = 0;
+  var pendingCookie = '__Host-dirac_boundary_pending_v431';
   var nativeFetch = window.fetch.bind(window);
   var restoreLocation = history.replaceState.bind(history);
-  var noticeText = '';
+  var noticeText = '', noticeDismissible = false;
   function canonicalPath(){
     var path=String(location.pathname || ''), at=path.toLowerCase().lastIndexOf('/'+page);
     return at >= 0 ? path.slice(0,at+page.length+1) : '/'+page;
@@ -134,12 +144,17 @@
   function rejectResponse(response){
     return response.clone().json().catch(function(){ return null; }).then(function(data){ throw serverError(response,data); });
   }
-  function notice(message){
-    noticeText = message;
+  function notice(message, canDismiss){
+    noticeText = message; noticeDismissible = canDismiss === true;
     if(!document.body) return;
     var node = document.getElementById('diracBoundaryNotice');
     if(!node){ node = document.createElement('dialog'); node.id = 'diracBoundaryNotice'; node.setAttribute('aria-label','Pemeriksaan keamanan'); document.body.appendChild(node); }
     node.textContent = message;
+    if(noticeDismissible){
+      var close = document.createElement('button'); close.type='button'; close.textContent='Perbaiki input';
+      close.addEventListener('click',function(event){event.preventDefault();event.stopPropagation();if(typeof node.close==='function')node.close();});
+      node.appendChild(close);
+    }
     if(!node.open && typeof node.showModal === 'function') node.showModal();
   }
   function healthPath(){
@@ -153,47 +168,99 @@
     return 'https://api.'+parts.join('.')+'/api/health';
   }
   function signed(value){ return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(text(value)) && value.length >= 48 && value.length <= 4096; }
+  // This host-only flag contains no account, payload, credential, CSRF or nonce.
+  // It is a local checkpoint hint, never evidence that authorizes a server ban.
+  function markPending(value){
+    try{ document.cookie=pendingCookie+'='+(value?'1':'')+'; Path=/; Secure; SameSite=Strict; Max-Age='+(value?'86400':'0'); }catch(_){}
+  }
+  function hasPending(){
+    try{return String(document.cookie || '').split(';').some(function(part){return part.trim()===pendingCookie+'=1';});}catch(_){return false;}
+  }
+  function payload(token){
+    if(!signed(token)) return null;
+    try{var encoded=token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/');return JSON.parse(atob(encoded+'='.repeat((4-encoded.length%4)%4)));}catch(_){return null;}
+  }
+  function cachedProof(){
+    return reportProof && reportProof.until > Date.now()+5000 ? reportProof : null;
+  }
+  function observeProof(response){
+    if(!response || !response.ok) return;
+    if(response.headers.get('X-Domain-Token-Refreshed')){reportProof=null;return;}
+    var ordinary=payload(text(response.headers.get('X-Dirac-Page-Nonce')));
+    if(reportProof && ordinary && ordinary.sid !== reportProof.sid) reportProof=null;
+    var csrf=text(response.headers.get('X-Dirac-CSRF-Token') || response.headers.get('X-CSRF-Token'));
+    var nonce=text(response.headers.get('X-Dirac-Security-Report-Nonce') || (ordinary && ordinary.act==='security_report'?response.headers.get('X-Dirac-Page-Nonce'):''));
+    var n=payload(nonce), c=payload(csrf), now=Math.floor(Date.now()/1000);
+    if(!n || !c || n.typ!=='dirac-page-nonce-v1' || n.act!=='security_report' || n.mth!=='POST'
+      || !Number.isSafeInteger(n.iat) || !Number.isSafeInteger(n.exp) || n.iat>now+30 || n.exp<=now+5 || n.exp>n.iat+600
+      || !Number.isSafeInteger(c.exp) || c.exp<=now+5 || !/^[a-f0-9]{64}$/.test(text(n.sid)) || !/^[a-f0-9]{64}$/.test(text(n.oh))) return;
+    reportProof={csrf:csrf,nonce:nonce,sid:n.sid,until:Math.min(n.exp,c.exp)*1000};
+  }
+  async function prepareProof(){
+    var ready=cachedProof(); if(ready) return ready;
+    if(proofPending) return proofPending;
+    proofPending=(async function(){
+      var response=await reportRequest(healthPath()+'?action=domain_health&_dirac_page_nonce_for=security_report&_t='+Date.now(),{method:'GET',headers:{Accept:'application/json'}});
+      if(!response.ok) return rejectResponse(response);
+      observeProof(response);
+      var ready=cachedProof(); if(!ready) throw new Error('DIRAC_CSRF_BOOTSTRAP_REQUIRED');
+      return ready;
+    })();
+    try{return await proofPending;}finally{proofPending=null;}
+  }
+  async function resumeCheckpoint(){
+    if(!resumePending || resumeRunning || resumeAttempts>=2 || incident) return;
+    resumeRunning=true;resumeAttempts+=1;
+    document.documentElement.setAttribute('data-dirac-security-incident','checkpoint');
+    try{
+      await prepareProof();
+      if(!incident){resumePending=false;markPending(false);document.documentElement.removeAttribute('data-dirac-security-incident');}
+    }catch(error){
+      notice('Pemeriksaan keamanan belum selesai. Akses tetap ditahan. '+(error.diracPublicMessage || codeMessage(error) || 'Sambungkan jaringan lalu muat ulang halaman.'));
+    }finally{resumeRunning=false;}
+  }
   async function reportRequest(url, options){
     var controller=new AbortController(), timer=setTimeout(function(){controller.abort();},12000);
-    var next=Object.assign({},options,{mode:'cors',credentials:'include',cache:'no-store',redirect:'error',
+    var next=Object.assign({},options,{mode:'cors',credentials:'include',cache:'no-store',redirect:'error',keepalive:true,
       referrer:location.origin+canonicalPath(),referrerPolicy:'no-referrer-when-downgrade',signal:controller.signal});
     // Use the captured transport once. CSRF and action-bound nonce still come from Central Guard.
     try{ return await nativeFetch(url,next); }finally{ clearTimeout(timer); }
   }
   async function guardedPost(action, body){
-    var base=healthPath();
-    var proof=await reportRequest(base+'?action=domain_health&_dirac_page_nonce_for='+encodeURIComponent(action)+'&_t='+Date.now(),
-      {method:'GET',headers:{Accept:'application/json'}});
-    if(!proof.ok) return rejectResponse(proof);
-    var csrf=text(proof.headers.get('X-Dirac-CSRF-Token') || proof.headers.get('X-CSRF-Token'));
-    var nonce=text(proof.headers.get('X-Dirac-Page-Nonce'));
-    if(!signed(csrf) || !signed(nonce)) throw new Error('DIRAC_CSRF_BOOTSTRAP_REQUIRED');
-    return reportRequest(base+'?action='+encodeURIComponent(action),{method:'POST',keepalive:true,
-      headers:{Accept:'application/json','Content-Type':'application/json','X-CSRF-Token':csrf,'X-Dirac-CSRF-Token':csrf,'X-Dirac-Page-Nonce':nonce},
+    if(action!=='security_report') throw new Error('DIRAC_REPORT_ACTION_INVALID');
+    var proof=cachedProof() || await prepareProof();
+    if(incident && incident.sid && incident.sid!==proof.sid) throw new Error('DIRAC_REPORT_SESSION_CHANGED');
+    if(incident && !incident.sid) incident.sid=proof.sid;
+    reportProof=null;
+    return reportRequest(healthPath()+'?action=security_report',{method:'POST',keepalive:true,
+      headers:{Accept:'application/json','Content-Type':'application/json','X-CSRF-Token':proof.csrf,'X-Dirac-CSRF-Token':proof.csrf,'X-Dirac-Page-Nonce':proof.nonce},
       body:JSON.stringify(body)});
   }
   function reportBody(){
     var url = incident.family === 'forbidden_html_suffix';
     var field = text(incident.field).replace(/[^a-z0-9_-]/gi,'').slice(0,64) || 'input';
     var family = text(incident.family).replace(/[^a-z0-9_-]/gi,'').slice(0,64);
-    // Keep the existing server's exact legacy event label; no warning count is fabricated.
-    var legacy = page === 'parfum.html' && (url || /^(?:name|detail|note|phone|menu|search|promo)$/.test(field));
+    // Legacy protocol label only: the server recognizes this name; it does not count attempts.
+    var legacy = page === 'parfum.html' && (url || !incident.sample && /^(?:name|detail|note|phone|menu|search|promo)$/.test(field));
     return {action:'security_report',reason:'html_detected_attack',type:url?'url_guard':'input_guard',page:page,
       event:url?'forbidden_html_url_suffix':legacy?'fourth_high_confidence_input_violation':'high_confidence_input_violation',
-      evidence:legacy?'family='+(url?'forbidden_html_suffix':'frontend_threat')+';field='+field+';source=parfum_checkout_security':'family='+family+';field='+field+';source=html_boundary',version:'dirac-html-shell-v1'};
+      evidence:legacy?'family='+(url?'forbidden_html_suffix':'frontend_threat')+';field='+field+';source=parfum_checkout_security':'family='+family+';field='+field+';source=html_boundary'+(incident.sample?';sample='+incident.sample:''),version:'dirac-html-shell-v1'};
   }
   async function respond(){
-    if(!incident || running || finished) return;
-    running=true;
+    if(!incident || running || finished || attempts>=2) return;
+    running=true; attempts+=1; markPending(true);
     document.documentElement.setAttribute('data-dirac-security-incident','pending');
+    var delivery=guardedPost('security_report',reportBody());
     notice('Permintaan dihentikan. Laporan keamanan sedang dikirim.');
     try{
-      var response=await guardedPost('security_report',reportBody());
+      var response=await delivery;
       var data=await response.clone().json().catch(function(){return null;});
       if(response.status===403 && data && data.code==='CENTRAL_SECURITY_BLOCKED'){
+        finished=true; markPending(false);
         document.documentElement.setAttribute('data-dirac-security-incident','blocked');
         notice('Akses diblokir oleh server. Hubungi admin untuk pemeriksaan status pemblokiran.');
       }else if(response.ok){
+        finished=true; markPending(false);
         document.documentElement.setAttribute('data-dirac-security-incident','reported');
         notice('Laporan keamanan diterima server. Akses halaman tetap dihentikan.');
       }else throw serverError(response,data);
@@ -201,13 +268,19 @@
       document.documentElement.setAttribute('data-dirac-security-incident','unconfirmed');
       notice('Akses halaman dihentikan. Ban persistent belum terkonfirmasi. '+(error.diracPublicMessage || codeMessage(error) || 'Pengiriman laporan keamanan gagal.'));
     }finally{
-      finished=true; running=false;
+      running=false;
       window.__DIRAC_BACKEND_AUTH_CONTEXT__=null;
     }
   }
-  function signal(field, family){
+  function signal(field, family, sample){
     if(incident) return;
-    incident={field:field,family:family};
+    if(family==='restricted_keyword'){
+      notice('Teks tersebut dibatasi untuk kolom ini. Perbaiki input sebelum melanjutkan.',true);
+      return;
+    }
+    var proof=cachedProof();
+    incident={field:field,family:family,sample:!opaqueKey.test(text(field)) && typeof sample==='string'?sample.slice(0,768):'',sid:proof?proof.sid:''};
+    markPending(true);
     void respond();
   }
   function suffix(){
@@ -239,7 +312,7 @@
     if(typeof value === 'string'){
       if(!fieldKey.test(key)) return null;
       var result = check(value);
-      if(result.detected) return {field:fieldAlias(key),family:result.family};
+      if(result.detected) return {field:fieldAlias(key),family:result.family,sample:result.sample || ''};
       return null;
     }
     if(!value || typeof value !== 'object') return null;
@@ -255,10 +328,10 @@
     var url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url,location.href);
     if(!isApi(url)) return nativeFetch(input,init);
     inspectLocation();
-    if(incident) throw new Error('DIRAC_SECURITY_INCIDENT_PENDING');
+    if(incident || resumePending) throw new Error('DIRAC_SECURITY_INCIDENT_PENDING');
     if(!incidentAction(url)){
       var found = null;
-      url.searchParams.forEach(function(value,key){ if(!found && fieldKey.test(key)){ var result=check(value); if(result.detected) found={field:fieldAlias(key),family:result.family}; } });
+      url.searchParams.forEach(function(value,key){ if(!found && fieldKey.test(key)){ var result=check(value); if(result.detected) found={field:fieldAlias(key),family:result.family,sample:result.sample || ''}; } });
       var body = init && init.body;
       if(body === undefined && typeof Request !== 'undefined' && input instanceof Request && !/^(GET|HEAD)$/.test(input.method)) body = await input.clone().text();
       if(typeof body === 'string'){
@@ -267,7 +340,7 @@
       }else if(typeof FormData !== 'undefined' && body instanceof FormData || typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams){
         body.forEach(function(value,key){ if(!found && typeof value === 'string') found=inspectBody(value,key,0); });
       }
-      if(found){ signal(found.field,found.family); throw new Error('DIRAC_INPUT_REJECTED'); }
+      if(found){ signal(found.field,found.family,found.sample); throw new Error('DIRAC_INPUT_REJECTED'); }
     }
     if(incidentAction(url)){
       var controller = new AbortController();
@@ -281,7 +354,10 @@
       var timer = setTimeout(function(){controller.abort();},12000);
       try{return await nativeFetch(input,next);}finally{clearTimeout(timer);}
     }
-    return nativeFetch(input,init);
+    if(/(?:login|register|logout|refresh|handoff|password|recovery|(?:passkey|mfa).*verify)/i.test(url.searchParams.get('action') || '')) reportProof=null;
+    var response=await nativeFetch(input,init);
+    observeProof(response);
+    return response;
   }
   window.fetch = outgoing;
   function eligible(el){
@@ -308,16 +384,16 @@
     if(event.cancelable) event.preventDefault();
     event.stopImmediatePropagation();
     if(el.isContentEditable) el.textContent=''; else el.value='';
-    signal(fieldAlias(el.id || el.name || 'input'),result.family);
+    signal(fieldAlias(el.id || el.name || 'input'),result.family,result.sample);
   }
   ['beforeinput','paste','drop','input','compositionend','change'].forEach(function(type){ document.addEventListener(type,inputEvent,true); });
   document.addEventListener('submit',function(event){
     var fields=event.target.querySelectorAll('input,textarea,[contenteditable]:not([contenteditable="false"])');
-    for(var i=0;i<fields.length;i++) if(eligible(fields[i])){ var result=check(text(fields[i].isContentEditable?fields[i].textContent:fields[i].value)); if(result.detected){signal(fieldAlias(fields[i].id||fields[i].name||'input'),result.family);break;} }
-    if(incident){event.preventDefault();event.stopImmediatePropagation();}
+    for(var i=0;i<fields.length;i++) if(eligible(fields[i])){ var result=check(text(fields[i].isContentEditable?fields[i].textContent:fields[i].value)); if(result.detected){event.preventDefault();event.stopImmediatePropagation();signal(fieldAlias(fields[i].id||fields[i].name||'input'),result.family,result.sample);break;} }
+    if(incident || resumePending){event.preventDefault();event.stopImmediatePropagation();}
   },true);
   document.addEventListener('click',function(event){
-    if(incident){event.preventDefault();event.stopImmediatePropagation();return;}
+    if(incident || resumePending){event.preventDefault();event.stopImmediatePropagation();return;}
     var anchor=event.target.closest && event.target.closest('a[href]');
     if(!anchor || anchor.hasAttribute('download')) return;
     var target=new URL(anchor.href,location.href);
@@ -328,17 +404,23 @@
   },true);
   window.addEventListener('hashchange',inspectLocation);
   window.addEventListener('popstate',inspectLocation);
-  window.addEventListener('pageshow',inspectLocation);
-  document.addEventListener('DOMContentLoaded',function(){inspectLocation();if(noticeText)notice(noticeText);void respond();},{once:true});
-  window.DiracSecurityBoundary=Object.freeze({check:check,signal:signal,pending:function(){return !!incident;},rejectResponse:rejectResponse,message:function(value){return value && value.diracPublicMessage || codeMessage(value);}});
+  function lifecycle(){inspectLocation();if(incident)void respond();else if(resumePending)void resumeCheckpoint();}
+  window.addEventListener('pageshow',lifecycle);
+  window.addEventListener('online',lifecycle);
+  window.addEventListener('pagehide',function(){if(incident && !finished || resumePending)markPending(true);});
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden' && (incident && !finished || resumePending))markPending(true);});
+  document.addEventListener('DOMContentLoaded',function(){inspectLocation();if(noticeText)notice(noticeText,noticeDismissible);void respond();},{once:true});
+  window.DiracSecurityBoundary=Object.freeze({check:check,signal:signal,pending:function(){return !!incident || resumePending;},rejectResponse:rejectResponse,message:function(value){return value && value.diracPublicMessage || codeMessage(value);}});
   ['pushState','replaceState'].forEach(function(method){
     var original = history[method];
     history[method] = function(){var result=original.apply(history,arguments);inspectLocation();return result;};
   });
+  resumePending=hasPending();
   inspectLocation();
+  if(resumePending && !incident)void resumeCheckpoint();
 })();
 </script>
-<meta http-equiv="Content-Security-Policy" content="base-uri &#x27;none&#x27;; object-src &#x27;none&#x27;; frame-src &#x27;none&#x27;; child-src &#x27;none&#x27;; script-src &#x27;self&#x27; &#x27;sha512-TXsvtCkTqUgpDR2JaABlu+gDkOIWUTWezr+1aPkRoDlUv3dwc3NkidtFMP67dNPjHVsAq4xEBZYZr4DLmRW28g==&#x27; &#x27;sha512-NAZSQ0RexatJTtnCyB1JhrZObBvo7jN2pjK4Be4CDucRcSlafhEZ1Cs0ApWFGKfqDjLjsBkZDVCblu/t1TxSiA==&#x27; &#x27;sha512-CdBsO/bYGEOM3OfegzBMBidFrK3vUlE3QzkJeztnrwKZa+siPhrf9qJNIxeHmxTZV6qFLeycqZ9H6C6o+/Qbog==&#x27; &#x27;sha512-Dfe5B31ey767mijcIPH1TE8WEShF7oM+w1BHpZVmq/D+P7sVU7BhD9koy3Uu/xaVLqtPcvA4TfG9lKJ5IeGqOA==&#x27; &#x27;sha512-s3VWRJZYGfA1wDpUaBv0VMs2hzLEt5okQKZT1OdlS6/b2n0+lzUZZxVBrsiQERmdmZWUr2zkIoXQLhLeAhvEaA==&#x27; &#x27;sha512-/UFT1gcZGaORKgT44wx+nqBsg+lBhzUzFeTkLPCoLYJjUfDF4rCWt7pSB3UwEu9xuEavqyJJPuL1PWoyQshiNA==&#x27; &#x27;sha512-PV1lMimRKLizPBDjAbcgZ8uRQmfPznAagf1wgwDb0gJZxgn4kCTZlW7hvUJjWYpTJWKg94oZFjnssutpcplUPA==&#x27; &#x27;sha512-ON2wNyY399Xp5lSWaz3eVFaUXbXWOKgITOntc4vUT37KO0jHFqUpECoHajZVAdYRGCs4LlM/MaK62IFy+Z3kYA==&#x27; &#x27;sha512-AY7tx0V0mcf720z+X+VIvcXtluUN1kqBQwHZShBpzW3AJKOIWxrQmfHbwt6p1+xUpPcMxDYTljFyvaR7UGH9Fw==&#x27; &#x27;sha512-g1WbUipGiQWIYIrGKeVc81DOIKRZUt+XQYw4IYLLgcV//BhG5tfzc9ABk7h/A0E3/6xwTLj/K+2Wuf/vj9vSBQ==&#x27; &#x27;sha512-3KHhPT9O3pT9Nh7kZz0DfjdG1I196YTjMrJ+RM9/rJbB6mJ8ibDwjZRiatYdu4L//JWIYVV5f6s0TkkmiowgSA==&#x27; &#x27;sha512-KC303aAkfTcoW9jqTdFKF50m3CjobTn9K+YsBg30Xfymn45MIPXRuwl4zzOiLdKRtkKmtDDr7MSpEpAyIFFIcg==&#x27; &#x27;sha512-JGZePcczvzoqbPRVOmmWWdtcukjE+leZrO0/DJA2o8p5ON/o1Z+uLWQJtT/PXNBn9tk44647Id5JDViQs48xLg==&#x27; &#x27;sha512-dh7me5EUpgRhuOW/VHjQ2cD+8P2MOSl66RDq4POD2rGhiDqWtQ2pHpMDBCadlz0Nh2MTNoE3fTSddBq8X27Wdw==&#x27; &#x27;sha512-evsa/z4pb3M2immJwje5AeUKmHh4FhYbHfPj7pThXGs5Oa60c7f+WiA25QqC1M3IPCbAMyEVxUyxBs/SHIkB8Q==&#x27; &#x27;sha512-iILKbPwteQDEGUM93D7a8sdNhJl0F5rerBCS59nwxeQfEx9OYBBJVzAOuQFawbbbp2KUMrFWyfIUYkaI1RGdhw==&#x27; &#x27;sha512-r1txH+/F2Z2G0r2TW3a/W4leGGxbKfbQ9ap/ocP9JEBAUeub5fCEe+5/pGZ+xHeo0KhgfLdja6BS6wrWgmCspw==&#x27; &#x27;sha512-5oCOPXC3nxNViqG2uDyiiXQEQo89uZEPCMLgUSPpYSt0SUCx61mPyXc/j2xPQw+Cwjwfpr0nDmzIsRmv/yXPtg==&#x27; &#x27;sha512-/bPjKOOke31jX1NR0zcJluS7F//aqTHD37XbINN1eBU7OiawRAYRAvAZffpxKdAS1T2vEz6fDIujJthpM0W2bg==&#x27; &#x27;sha512-fdPA1N8IAKecIv2mpv2CL0vvnBjlX5QTHo/vhuMMhnOxZl4bvSm4Css8K/KmcA//i5s6F+PN8typ8B01njD9zw==&#x27; &#x27;sha512-A/phzAzYLK3BssUujo1IOUtK68hS/2gyo15qdMWOlk560LUI4lq8DwOlT7buNC7UtLNdfWvWRf6ZeWEIpYQy7w==&#x27; &#x27;sha512-JqdrB8v3wH+ibL03CU41PTw2G5cddwxQZgCcQia22chXaZaOtQW6fIMg9BkUbMExQcCLQ/zdXkadinSbeCAdog==&#x27; &#x27;sha512-QSGuNuzc9IakZdvqcGMTrF9fYsCyG6zYAtONifkdTXxp0TdIykVtH1/JHX02fhK7DbX9PceVkgpbUI1c9yOStA==&#x27; &#x27;sha512-8lK6n3BFEQi5v5U3vY+pNWbLAByJrfixwemaDcUOa2IazFyAgN/HQ4MSWT6iUKLWuQUW2QI4tLhglRW9V8YPQQ==&#x27; &#x27;sha512-X2cRtV+vDBfGt6VjVW1XcOjBPMKkP6R/VAjhx+UHonGj/NCz4PRJmVcoRCVo/9nG2QrIhGWuxh8/xQ9xOhEj/g==&#x27; &#x27;sha512-2RQ0wp1EMAU4UQs3YxpYJ4Ht4G7Ir8PjgvwRCPhgRZSox1NC6RnvRn38UM8vrqUjGNE+/XIxK7EKxnc/KSwp0g==&#x27; &#x27;sha512-VKFJWhqG7LzfWcq9q00c63XhN1t/czLv2dBM7jpOHplJoD/iAu/X1qzVm0afg0VaHQHqeUoqMcQmUX3gzLbO2A==&#x27; &#x27;sha512-xaKL//vn94QqhJP6D6x5i8qXL+Q4bVsU3nIt0fQiU7WPUTmgrGWZV5vpZXg5dPSO9qsNxRTiE+L2EF5ko82WBA==&#x27; &#x27;sha512-Xfv0oF8h+MYAGURqfkL7Er1zX4l1ELeYGoCzkAZpbiAiD13sj351Cw5UL/VzsqaUP5Xi7rFUXYfmf1MYo7/kNw==&#x27; &#x27;sha512-sLLvbC9Dt66mqiW17WOhAojJk38kJqBFAV++jRSb74zXp9fBxnH66qCvrb8JkxB0GguqZcPhrc7zlETiCS+Kkw==&#x27; &#x27;sha512-bbpr5KXeqc6OrLVwOL6hPJJselokrz4+M7d6DuHUAY64ZB4nEX9HJn+UqF42YoiiolSRJxrJxYx7gYrgMUNpfA==&#x27; &#x27;sha512-Yssl4ztF7NWFXl+cafAsFfIbJSNlCqao1Tjvf/5U1Pata62WP8+lJYjU3H82f6R6bcrMuClzk/c879aPuY+bDg==&#x27; &#x27;sha512-5HnPgO4xNs9w2hdcKOl1O1AAzU6unsxp3FOBgKzCkJ7HZ9f/1VYeBZ95r2QCn6e+h2e4NQZr626nP5BSBibMIg==&#x27; &#x27;sha512-XySB0rH3i2TxQr8a0U+QD+/DhuRWHdmoPJVu91ze/yxUhIlKGt0loPfhmNE6aRbv2cZavOqfzFzS+YJBjIDXBg==&#x27; &#x27;sha512-dQWskz6ZAY7uSJPlFCxuOwvJXi+SjV8B5ZcaOFv3g0pvInjnaEGAkuIqjb8di02ZFF7PziEohuTm9ICkbvf5iw==&#x27; &#x27;sha512-6pt6a9qlvYd56yqBkNuhBkUp4JE+Uur36v1662Ti1iiMAQlN/ESxJii/gZWjOOXrHYGVs3do770lo47gv20Ajg==&#x27; &#x27;sha512-uckIS3Jvm7iryIR3WLhsQT9PQ41qZtzx/w6SsA4M6OzFAnumIH9VDVLlRkukG7+cIxuiJm3XMAyjFp3HeB2p1Q==&#x27; &#x27;sha512-LWES0sm7RSwTOU5prIFxx17N4vcB8udb8sWf5baFYssIChxFdNlBCqGHZ4OztYujnb2E9USFT1FtOV4nK8SMxQ==&#x27; &#x27;sha512-nMSCZnfxmoAM3BIGc/sqLyheJUqqpL0LM0moa/9TQL319wEIAB4kfrgl3YlwuhzMTythBRIZ/AlLS8apb1zvkw==&#x27; &#x27;sha512-iioWh0JHn4H4ABU59YzGePl1sDQHa/E1nIDPKRYHdvaDm3YpkalgZs18azdcbUbf9bBRkDMo0CA7M3+FRkGzyg==&#x27; &#x27;sha512-Qw0ghc3RxMwGR9ueEp0XACZ/7fy3opgzGKSME80r9MA1DdEZnJxfenlUaKlqSmvBtmYOrw9mnPk8bjyL1SFoWw==&#x27; &#x27;sha512-WCZYlyeRE3wOe/2BEVeXGZUBV3VeL7BSaMn3prr1BVvmTx+p5Ji6K8HLSY6Gsv2sVhuGURjU6ITMzWBJPeC0ow==&#x27; &#x27;sha512-Lke5QQXcZOl1U0Xih4wLay7nUdqLWN/2hJopN8amQJX2+p1CxkXwux3PWD/G8WGtKcvZq5P6+CebldTyZZWV1w==&#x27;; script-src-attr &#x27;none&#x27;; style-src &#x27;self&#x27; https://fonts.googleapis.com &#x27;sha512-1LEjt8c3XpczrPVDvgPvqqBxFfD4RwusDCsUlV+NhfnquPqFzx8zeiPIdcWL1m/IKwyZAvL9FSddgDp89OYhvw==&#x27; &#x27;sha512-qQRqvLA7YVEWr2FuYQW+D9vCDFsgbopkOqZEvVB+yW1/Dy50OUjax9JtRmst6tdn/PtYvLMg9yQ28y/pjTGblQ==&#x27; &#x27;sha512-wiLChdtymvq4sMIXtCv+Bw3ap8J+h9jH/efv82XAn8e2k5dYoXzF0KmkWoaFyWsa9YvBVIfmXTyCAROd0meQPQ==&#x27; &#x27;sha512-H2I8co0qz+OOtB5+umgHt/OdrU7fyDliMZRXrrO6nLw4pVBXl4M9kbi/1Hv6F6/qDb6NQU+YsbIB6uMqoRtJnw==&#x27; &#x27;sha512-DjOavFiwUDUqp9ZAlUJ38z+TmRYn0pFnR540oS2c6YEJTAn2ebC4rhHXCBZ4Pa9DIy4mFEYDHfQYJ6oNFcC/IA==&#x27; &#x27;sha512-Wv7uA0pnvVn6xdYWt8kXsff1oUQ+ukywF270mEXagv+0NXB/TsPtShJydqT4uRLW+uRuozvL2pVrhpl+CqOzPQ==&#x27; &#x27;sha512-pAigYa9gqEk/i0ykiURYIYElmsDLNlzQJIqzjV0iYm+NpIYqituLCdxzwUH6pxjM7zBdBeToOFOpmVA5gyj9zQ==&#x27; &#x27;sha512-/9vcRC4dKK2OC8tPBGK5Tps4/4Cl525bI+iLVtdqSWq9dv5afGuZyU8zcaQJC4APUhpJgXliyKinptP3ZlCNjg==&#x27; &#x27;sha512-IqZO1Dy/awAxhyWYUFdHEkhFrbBaGCgSulXIFRBQCeBa/g87JZmn2UBP2HDg65uPHr01cse88NFYcYvk9y3+pQ==&#x27; &#x27;sha512-UUryqI0nK11vTvNJTLyJGqAj6yDfENJyWkgL9+8Jkpv9VA+Xs/YxeF0lyo/R9D38lTZKX8MdT4zxrUtknYppDg==&#x27; &#x27;sha512-FRWxfXv7rsai6vx+yjJ4esLxHHj46sJuuuTvCv6tJVG1iFBpblWr8qmlc7TlW0tG1jtZROlNiaEpVilTU9UxUg==&#x27; &#x27;sha512-mFkEY8h3tKaI3O/mZxKyfmfW0Qb2dbNMCQvsKNrxAZoQXYLY9BhZhBr/C1yKf9p3V6dG6ztniBGYU4EW6KQl7Q==&#x27; &#x27;sha512-ouAZx1nYC6MJAC2Slphr5x/Qj0nNHqb4izdOq/6h2wZhIJwELlhc7jiQmY8Dj1spJo4XQ23iRSPNqaKoQBneWA==&#x27; &#x27;sha512-HW9GuaxzVLz9zXocKwfLTs6xNd96cF1p54p5N68qsc3m/G4JMRuyMtoajuFyvEOii2DjLyVoDGJDw4vF+1wvAw==&#x27; &#x27;sha512-WQzyH2fOAc98uI0SaHRlZxmETHgVkEHvwKmU6wS7gYlFMBJrKiDjXiII6bZQI4y8qQQ0ppFiJacYXQTMtstRtg==&#x27; &#x27;sha512-s/soQFTlhnQxhLL9SAXHzo0X7QCeMvEOm1X17SQ32FaSC1q93/sOgKjYq9HYCYtojeNaE/0XSi92wtBzshG+rA==&#x27; &#x27;sha512-QDu99qKTmpG5a5EPtLKh0CE1Gt9v8GH9v02NXlBUdXIxDi1CU0osLfeiqp4OgtW6UUhixMVA6Gs2/uTVcG+mAw==&#x27; &#x27;sha512-9a+PQ/s9wcn2oCpG7Cm6SeqeT3y4km470TLmlqchVJ6ZFDlaoCf5iGo2yNQTO/J311IAPiqlRwM8qU/aZqn5pw==&#x27; &#x27;sha512-X9FnpEV/TSyU2hAu3DIRWhYzcLIZUuPfQNJRDy8DHk1vBqzlJLigngrlEQrIEGGRg3yAulzuAQGTJ1ZDRSM+QA==&#x27; &#x27;sha512-ZRQ3jqzsPyEApP/DmlIjUmiE4ORAZPeIAWocfVg9uEICRpdwMH6z1ievtJdpZec/3/Gy4WPccC4yrO5Xm6lNFg==&#x27; &#x27;sha512-JYJRg8rQvkFHesYeTXK+Iur9lU8FqFLMH+cAnVJP88zCu+zkcpD64tn1EfLBKIamnTi3RIWysNj9uOaT1EmUbg==&#x27; &#x27;sha512-fwSwPWPD00h+Df0DrIs8UZZOEt/yyrkxfWx49kLfZv8g+oNUjyoWw0AynxnI2Aj7JnUgnVu8Xkn7sWK/P9rOvQ==&#x27; &#x27;sha512-ys1Dr1jPNJkmTC19l49wHH2g9Di9Y2bMUG9Mj7q8PIUDICT0jBg1QetrzpIJcAwc1YRdqMaWFouHezPcIkl7wQ==&#x27; &#x27;sha512-W9CL/jrqVpVONHtlQQGU9/THeYg5r5JTG9MuLRG4piMo5JsN8kgN+knE+ithl68HkEW1Ri5jJegZBQtG0cMUnQ==&#x27; &#x27;sha512-PB7VtN7RqvdiElyskYzQljQgZ+j0zXUsBcluymMVNDdmuR33KIoYv8m1OiMATyIZcpJIHh4Dc1NNlnUHfoAeow==&#x27; &#x27;sha512-nakEH65hMjgTuluHGxMVxi32ZXvzH5FQwZbglg+zrm8Ywd4vREoCgnG5XFlWJ+j1Wl5jD6fd+E2eFZUWNM5iWA==&#x27; &#x27;sha512-4liJPB0+WSvwZ/D+/ZnplVIQxqmB846fD7KE0wz2P30FqrXc1e88gXIf9HueROqGd9FWEtKDLZuNaGbBQWXUrQ==&#x27; &#x27;sha512-RByjnmcR2aYT0aPXmaCDvp2QcX01dau95aKm45EtmUdCVVC/MK44Ua1TuyKp7Lg1iijGHkQEbTUSGxgcuSB4IQ==&#x27; &#x27;sha512-KYpPnobdnr29acIXigZ9cYaZPPU11wBkesA29RgyjOLTbMaeywjFCpWYu5mp2sqA+e9yeSMnjiJJlGY2y6h5RA==&#x27; &#x27;sha512-qhQPfPe39Gv9KiAQdJtLUCIYlI6ASw4U5uPGOjEQOkBzIcriFA0dc6ntiC0niTecAndyByJKEo8Za1Ruhhy8sg==&#x27; &#x27;sha512-c23p5EbnxBvRKO7RRiWBUGqPsrQUnmhqsduIdvka8FJ0wvWCXDgTxHuQWhvzFV4+0Ym4MBx+vXcqZhIVupFRcA==&#x27; &#x27;sha512-+ONlxL3rnHTAH+NxzvYGbOIlfL9ekJqzPipv9G0NcQuX4R8fRnu5JOuq1osabPasgO1Xc2ya8IxsIzgZbfRB1g==&#x27; &#x27;sha512-lFpOMloIyXg+6+kG53qXSaY0f9iupxGGLjRtelOrhchf/7AF5wJeD3oAWpIawD1Ig+PhzmW40yak31a6QW0G+A==&#x27; &#x27;sha512-MyZ9NoEjFiqKEeHtOE0bkpYxA1FnA+3CfmRF7IrFojZS5t5Imktkh5hyB2pErOEz2cqOBQHgxXBu2v9OQ9VRjQ==&#x27; &#x27;sha512-qk8zlFws6h64xzHAGEy6YZfsdrBw35yZxjtTLdf2i3loia6AMhyVGr1SEymMS0pyh4E+vvteQb/Ag+tFA9I5XA==&#x27; &#x27;sha512-ZGBm3aeRRxNRQPB2YJ6DO4zShvLSSa39tgOW8hl71h3uGvgZgdCMQFa4Fpt9AEF4p2rno73J8Q5okg8/5bTpfw==&#x27; &#x27;sha512-uZikZ+cAxhAVCzmMwm1GXFhtQQSALiZNccNQppFFF7YlCRORBIRutQ2eqQ/taW0PHOgYs1I1ibGk2wlT8bDstA==&#x27; &#x27;sha512-tiDKExCFguuBxNRIq1fRTHc+NeyBfI6DWKJIFSWJs1xhVQYkeL8PXvG+NDFbbhQ1LTbVJWryJs5gzUTPkjshtg==&#x27; &#x27;sha512-jIAfEATxrvmke3KPebwK6fGdup1YPJa5+DFYW7/8zGELMGNda+1JGDlBG2wSIsvjAPgM+3+LB2SWJ+wZ9FirMQ==&#x27; &#x27;sha512-W8bJy53nibSZ1nRMKKAWmINanqw+xvda7RVmddNzRIJ35rSs2nV4DvSdQp5Wlw+hwcgsMSZIxV5aLFUXGF6jmQ==&#x27; &#x27;sha512-SWldPZ4KVgpY77561HFQI7SZn654LyoDY4OeAtgC1n+TC4Vtqv9ch/sK4kqgtHOaKHEeSgsXJRkBMX6lccieZQ==&#x27; &#x27;sha512-W37fLMECy30rVEkwf3PLLBN7s99M+mnfo8Onr8JNszuGdmWPF7Jrpkv1gJ64AuF4dao4IO0RYD4i5xW/xk2xQw==&#x27;; style-src-attr &#x27;none&#x27;; font-src &#x27;self&#x27; https://fonts.gstatic.com data:; img-src &#x27;self&#x27; data: blob:; media-src &#x27;self&#x27; data:; manifest-src &#x27;self&#x27;; worker-src &#x27;none&#x27;; form-action &#x27;self&#x27;; frame-ancestors &#x27;none&#x27;; upgrade-insecure-requests;">
+<meta http-equiv="Content-Security-Policy" content="base-uri &#x27;none&#x27;; object-src &#x27;none&#x27;; frame-src &#x27;none&#x27;; child-src &#x27;none&#x27;; script-src &#x27;self&#x27; &#x27;sha512-dhBoUJ3I5j3wZVHGG+l/Kj03f+iXmOOxurVmhPA2Wef3LBbZxGkJsEqUggZESzuP43qbziUzj5RRuUAh54vH1A==&#x27; &#x27;sha512-NAZSQ0RexatJTtnCyB1JhrZObBvo7jN2pjK4Be4CDucRcSlafhEZ1Cs0ApWFGKfqDjLjsBkZDVCblu/t1TxSiA==&#x27; &#x27;sha512-CdBsO/bYGEOM3OfegzBMBidFrK3vUlE3QzkJeztnrwKZa+siPhrf9qJNIxeHmxTZV6qFLeycqZ9H6C6o+/Qbog==&#x27; &#x27;sha512-Dfe5B31ey767mijcIPH1TE8WEShF7oM+w1BHpZVmq/D+P7sVU7BhD9koy3Uu/xaVLqtPcvA4TfG9lKJ5IeGqOA==&#x27; &#x27;sha512-s3VWRJZYGfA1wDpUaBv0VMs2hzLEt5okQKZT1OdlS6/b2n0+lzUZZxVBrsiQERmdmZWUr2zkIoXQLhLeAhvEaA==&#x27; &#x27;sha512-/UFT1gcZGaORKgT44wx+nqBsg+lBhzUzFeTkLPCoLYJjUfDF4rCWt7pSB3UwEu9xuEavqyJJPuL1PWoyQshiNA==&#x27; &#x27;sha512-PV1lMimRKLizPBDjAbcgZ8uRQmfPznAagf1wgwDb0gJZxgn4kCTZlW7hvUJjWYpTJWKg94oZFjnssutpcplUPA==&#x27; &#x27;sha512-ON2wNyY399Xp5lSWaz3eVFaUXbXWOKgITOntc4vUT37KO0jHFqUpECoHajZVAdYRGCs4LlM/MaK62IFy+Z3kYA==&#x27; &#x27;sha512-AY7tx0V0mcf720z+X+VIvcXtluUN1kqBQwHZShBpzW3AJKOIWxrQmfHbwt6p1+xUpPcMxDYTljFyvaR7UGH9Fw==&#x27; &#x27;sha512-g1WbUipGiQWIYIrGKeVc81DOIKRZUt+XQYw4IYLLgcV//BhG5tfzc9ABk7h/A0E3/6xwTLj/K+2Wuf/vj9vSBQ==&#x27; &#x27;sha512-3KHhPT9O3pT9Nh7kZz0DfjdG1I196YTjMrJ+RM9/rJbB6mJ8ibDwjZRiatYdu4L//JWIYVV5f6s0TkkmiowgSA==&#x27; &#x27;sha512-KC303aAkfTcoW9jqTdFKF50m3CjobTn9K+YsBg30Xfymn45MIPXRuwl4zzOiLdKRtkKmtDDr7MSpEpAyIFFIcg==&#x27; &#x27;sha512-JGZePcczvzoqbPRVOmmWWdtcukjE+leZrO0/DJA2o8p5ON/o1Z+uLWQJtT/PXNBn9tk44647Id5JDViQs48xLg==&#x27; &#x27;sha512-dh7me5EUpgRhuOW/VHjQ2cD+8P2MOSl66RDq4POD2rGhiDqWtQ2pHpMDBCadlz0Nh2MTNoE3fTSddBq8X27Wdw==&#x27; &#x27;sha512-evsa/z4pb3M2immJwje5AeUKmHh4FhYbHfPj7pThXGs5Oa60c7f+WiA25QqC1M3IPCbAMyEVxUyxBs/SHIkB8Q==&#x27; &#x27;sha512-iILKbPwteQDEGUM93D7a8sdNhJl0F5rerBCS59nwxeQfEx9OYBBJVzAOuQFawbbbp2KUMrFWyfIUYkaI1RGdhw==&#x27; &#x27;sha512-r1txH+/F2Z2G0r2TW3a/W4leGGxbKfbQ9ap/ocP9JEBAUeub5fCEe+5/pGZ+xHeo0KhgfLdja6BS6wrWgmCspw==&#x27; &#x27;sha512-5oCOPXC3nxNViqG2uDyiiXQEQo89uZEPCMLgUSPpYSt0SUCx61mPyXc/j2xPQw+Cwjwfpr0nDmzIsRmv/yXPtg==&#x27; &#x27;sha512-/bPjKOOke31jX1NR0zcJluS7F//aqTHD37XbINN1eBU7OiawRAYRAvAZffpxKdAS1T2vEz6fDIujJthpM0W2bg==&#x27; &#x27;sha512-fdPA1N8IAKecIv2mpv2CL0vvnBjlX5QTHo/vhuMMhnOxZl4bvSm4Css8K/KmcA//i5s6F+PN8typ8B01njD9zw==&#x27; &#x27;sha512-A/phzAzYLK3BssUujo1IOUtK68hS/2gyo15qdMWOlk560LUI4lq8DwOlT7buNC7UtLNdfWvWRf6ZeWEIpYQy7w==&#x27; &#x27;sha512-JqdrB8v3wH+ibL03CU41PTw2G5cddwxQZgCcQia22chXaZaOtQW6fIMg9BkUbMExQcCLQ/zdXkadinSbeCAdog==&#x27; &#x27;sha512-QSGuNuzc9IakZdvqcGMTrF9fYsCyG6zYAtONifkdTXxp0TdIykVtH1/JHX02fhK7DbX9PceVkgpbUI1c9yOStA==&#x27; &#x27;sha512-8lK6n3BFEQi5v5U3vY+pNWbLAByJrfixwemaDcUOa2IazFyAgN/HQ4MSWT6iUKLWuQUW2QI4tLhglRW9V8YPQQ==&#x27; &#x27;sha512-X2cRtV+vDBfGt6VjVW1XcOjBPMKkP6R/VAjhx+UHonGj/NCz4PRJmVcoRCVo/9nG2QrIhGWuxh8/xQ9xOhEj/g==&#x27; &#x27;sha512-2RQ0wp1EMAU4UQs3YxpYJ4Ht4G7Ir8PjgvwRCPhgRZSox1NC6RnvRn38UM8vrqUjGNE+/XIxK7EKxnc/KSwp0g==&#x27; &#x27;sha512-VKFJWhqG7LzfWcq9q00c63XhN1t/czLv2dBM7jpOHplJoD/iAu/X1qzVm0afg0VaHQHqeUoqMcQmUX3gzLbO2A==&#x27; &#x27;sha512-xaKL//vn94QqhJP6D6x5i8qXL+Q4bVsU3nIt0fQiU7WPUTmgrGWZV5vpZXg5dPSO9qsNxRTiE+L2EF5ko82WBA==&#x27; &#x27;sha512-Xfv0oF8h+MYAGURqfkL7Er1zX4l1ELeYGoCzkAZpbiAiD13sj351Cw5UL/VzsqaUP5Xi7rFUXYfmf1MYo7/kNw==&#x27; &#x27;sha512-sLLvbC9Dt66mqiW17WOhAojJk38kJqBFAV++jRSb74zXp9fBxnH66qCvrb8JkxB0GguqZcPhrc7zlETiCS+Kkw==&#x27; &#x27;sha512-bbpr5KXeqc6OrLVwOL6hPJJselokrz4+M7d6DuHUAY64ZB4nEX9HJn+UqF42YoiiolSRJxrJxYx7gYrgMUNpfA==&#x27; &#x27;sha512-Yssl4ztF7NWFXl+cafAsFfIbJSNlCqao1Tjvf/5U1Pata62WP8+lJYjU3H82f6R6bcrMuClzk/c879aPuY+bDg==&#x27; &#x27;sha512-5HnPgO4xNs9w2hdcKOl1O1AAzU6unsxp3FOBgKzCkJ7HZ9f/1VYeBZ95r2QCn6e+h2e4NQZr626nP5BSBibMIg==&#x27; &#x27;sha512-XySB0rH3i2TxQr8a0U+QD+/DhuRWHdmoPJVu91ze/yxUhIlKGt0loPfhmNE6aRbv2cZavOqfzFzS+YJBjIDXBg==&#x27; &#x27;sha512-dQWskz6ZAY7uSJPlFCxuOwvJXi+SjV8B5ZcaOFv3g0pvInjnaEGAkuIqjb8di02ZFF7PziEohuTm9ICkbvf5iw==&#x27; &#x27;sha512-6pt6a9qlvYd56yqBkNuhBkUp4JE+Uur36v1662Ti1iiMAQlN/ESxJii/gZWjOOXrHYGVs3do770lo47gv20Ajg==&#x27; &#x27;sha512-uckIS3Jvm7iryIR3WLhsQT9PQ41qZtzx/w6SsA4M6OzFAnumIH9VDVLlRkukG7+cIxuiJm3XMAyjFp3HeB2p1Q==&#x27; &#x27;sha512-LWES0sm7RSwTOU5prIFxx17N4vcB8udb8sWf5baFYssIChxFdNlBCqGHZ4OztYujnb2E9USFT1FtOV4nK8SMxQ==&#x27; &#x27;sha512-nMSCZnfxmoAM3BIGc/sqLyheJUqqpL0LM0moa/9TQL319wEIAB4kfrgl3YlwuhzMTythBRIZ/AlLS8apb1zvkw==&#x27; &#x27;sha512-iioWh0JHn4H4ABU59YzGePl1sDQHa/E1nIDPKRYHdvaDm3YpkalgZs18azdcbUbf9bBRkDMo0CA7M3+FRkGzyg==&#x27; &#x27;sha512-Qw0ghc3RxMwGR9ueEp0XACZ/7fy3opgzGKSME80r9MA1DdEZnJxfenlUaKlqSmvBtmYOrw9mnPk8bjyL1SFoWw==&#x27; &#x27;sha512-WCZYlyeRE3wOe/2BEVeXGZUBV3VeL7BSaMn3prr1BVvmTx+p5Ji6K8HLSY6Gsv2sVhuGURjU6ITMzWBJPeC0ow==&#x27; &#x27;sha512-Lke5QQXcZOl1U0Xih4wLay7nUdqLWN/2hJopN8amQJX2+p1CxkXwux3PWD/G8WGtKcvZq5P6+CebldTyZZWV1w==&#x27;; script-src-attr &#x27;none&#x27;; style-src &#x27;self&#x27; https://fonts.googleapis.com &#x27;sha512-1LEjt8c3XpczrPVDvgPvqqBxFfD4RwusDCsUlV+NhfnquPqFzx8zeiPIdcWL1m/IKwyZAvL9FSddgDp89OYhvw==&#x27; &#x27;sha512-qQRqvLA7YVEWr2FuYQW+D9vCDFsgbopkOqZEvVB+yW1/Dy50OUjax9JtRmst6tdn/PtYvLMg9yQ28y/pjTGblQ==&#x27; &#x27;sha512-wiLChdtymvq4sMIXtCv+Bw3ap8J+h9jH/efv82XAn8e2k5dYoXzF0KmkWoaFyWsa9YvBVIfmXTyCAROd0meQPQ==&#x27; &#x27;sha512-H2I8co0qz+OOtB5+umgHt/OdrU7fyDliMZRXrrO6nLw4pVBXl4M9kbi/1Hv6F6/qDb6NQU+YsbIB6uMqoRtJnw==&#x27; &#x27;sha512-DjOavFiwUDUqp9ZAlUJ38z+TmRYn0pFnR540oS2c6YEJTAn2ebC4rhHXCBZ4Pa9DIy4mFEYDHfQYJ6oNFcC/IA==&#x27; &#x27;sha512-Wv7uA0pnvVn6xdYWt8kXsff1oUQ+ukywF270mEXagv+0NXB/TsPtShJydqT4uRLW+uRuozvL2pVrhpl+CqOzPQ==&#x27; &#x27;sha512-pAigYa9gqEk/i0ykiURYIYElmsDLNlzQJIqzjV0iYm+NpIYqituLCdxzwUH6pxjM7zBdBeToOFOpmVA5gyj9zQ==&#x27; &#x27;sha512-/9vcRC4dKK2OC8tPBGK5Tps4/4Cl525bI+iLVtdqSWq9dv5afGuZyU8zcaQJC4APUhpJgXliyKinptP3ZlCNjg==&#x27; &#x27;sha512-IqZO1Dy/awAxhyWYUFdHEkhFrbBaGCgSulXIFRBQCeBa/g87JZmn2UBP2HDg65uPHr01cse88NFYcYvk9y3+pQ==&#x27; &#x27;sha512-UUryqI0nK11vTvNJTLyJGqAj6yDfENJyWkgL9+8Jkpv9VA+Xs/YxeF0lyo/R9D38lTZKX8MdT4zxrUtknYppDg==&#x27; &#x27;sha512-FRWxfXv7rsai6vx+yjJ4esLxHHj46sJuuuTvCv6tJVG1iFBpblWr8qmlc7TlW0tG1jtZROlNiaEpVilTU9UxUg==&#x27; &#x27;sha512-mFkEY8h3tKaI3O/mZxKyfmfW0Qb2dbNMCQvsKNrxAZoQXYLY9BhZhBr/C1yKf9p3V6dG6ztniBGYU4EW6KQl7Q==&#x27; &#x27;sha512-ouAZx1nYC6MJAC2Slphr5x/Qj0nNHqb4izdOq/6h2wZhIJwELlhc7jiQmY8Dj1spJo4XQ23iRSPNqaKoQBneWA==&#x27; &#x27;sha512-HW9GuaxzVLz9zXocKwfLTs6xNd96cF1p54p5N68qsc3m/G4JMRuyMtoajuFyvEOii2DjLyVoDGJDw4vF+1wvAw==&#x27; &#x27;sha512-WQzyH2fOAc98uI0SaHRlZxmETHgVkEHvwKmU6wS7gYlFMBJrKiDjXiII6bZQI4y8qQQ0ppFiJacYXQTMtstRtg==&#x27; &#x27;sha512-s/soQFTlhnQxhLL9SAXHzo0X7QCeMvEOm1X17SQ32FaSC1q93/sOgKjYq9HYCYtojeNaE/0XSi92wtBzshG+rA==&#x27; &#x27;sha512-QDu99qKTmpG5a5EPtLKh0CE1Gt9v8GH9v02NXlBUdXIxDi1CU0osLfeiqp4OgtW6UUhixMVA6Gs2/uTVcG+mAw==&#x27; &#x27;sha512-9a+PQ/s9wcn2oCpG7Cm6SeqeT3y4km470TLmlqchVJ6ZFDlaoCf5iGo2yNQTO/J311IAPiqlRwM8qU/aZqn5pw==&#x27; &#x27;sha512-X9FnpEV/TSyU2hAu3DIRWhYzcLIZUuPfQNJRDy8DHk1vBqzlJLigngrlEQrIEGGRg3yAulzuAQGTJ1ZDRSM+QA==&#x27; &#x27;sha512-ZRQ3jqzsPyEApP/DmlIjUmiE4ORAZPeIAWocfVg9uEICRpdwMH6z1ievtJdpZec/3/Gy4WPccC4yrO5Xm6lNFg==&#x27; &#x27;sha512-JYJRg8rQvkFHesYeTXK+Iur9lU8FqFLMH+cAnVJP88zCu+zkcpD64tn1EfLBKIamnTi3RIWysNj9uOaT1EmUbg==&#x27; &#x27;sha512-fwSwPWPD00h+Df0DrIs8UZZOEt/yyrkxfWx49kLfZv8g+oNUjyoWw0AynxnI2Aj7JnUgnVu8Xkn7sWK/P9rOvQ==&#x27; &#x27;sha512-ys1Dr1jPNJkmTC19l49wHH2g9Di9Y2bMUG9Mj7q8PIUDICT0jBg1QetrzpIJcAwc1YRdqMaWFouHezPcIkl7wQ==&#x27; &#x27;sha512-W9CL/jrqVpVONHtlQQGU9/THeYg5r5JTG9MuLRG4piMo5JsN8kgN+knE+ithl68HkEW1Ri5jJegZBQtG0cMUnQ==&#x27; &#x27;sha512-PB7VtN7RqvdiElyskYzQljQgZ+j0zXUsBcluymMVNDdmuR33KIoYv8m1OiMATyIZcpJIHh4Dc1NNlnUHfoAeow==&#x27; &#x27;sha512-nakEH65hMjgTuluHGxMVxi32ZXvzH5FQwZbglg+zrm8Ywd4vREoCgnG5XFlWJ+j1Wl5jD6fd+E2eFZUWNM5iWA==&#x27; &#x27;sha512-4liJPB0+WSvwZ/D+/ZnplVIQxqmB846fD7KE0wz2P30FqrXc1e88gXIf9HueROqGd9FWEtKDLZuNaGbBQWXUrQ==&#x27; &#x27;sha512-RByjnmcR2aYT0aPXmaCDvp2QcX01dau95aKm45EtmUdCVVC/MK44Ua1TuyKp7Lg1iijGHkQEbTUSGxgcuSB4IQ==&#x27; &#x27;sha512-KYpPnobdnr29acIXigZ9cYaZPPU11wBkesA29RgyjOLTbMaeywjFCpWYu5mp2sqA+e9yeSMnjiJJlGY2y6h5RA==&#x27; &#x27;sha512-qhQPfPe39Gv9KiAQdJtLUCIYlI6ASw4U5uPGOjEQOkBzIcriFA0dc6ntiC0niTecAndyByJKEo8Za1Ruhhy8sg==&#x27; &#x27;sha512-c23p5EbnxBvRKO7RRiWBUGqPsrQUnmhqsduIdvka8FJ0wvWCXDgTxHuQWhvzFV4+0Ym4MBx+vXcqZhIVupFRcA==&#x27; &#x27;sha512-+ONlxL3rnHTAH+NxzvYGbOIlfL9ekJqzPipv9G0NcQuX4R8fRnu5JOuq1osabPasgO1Xc2ya8IxsIzgZbfRB1g==&#x27; &#x27;sha512-lFpOMloIyXg+6+kG53qXSaY0f9iupxGGLjRtelOrhchf/7AF5wJeD3oAWpIawD1Ig+PhzmW40yak31a6QW0G+A==&#x27; &#x27;sha512-MyZ9NoEjFiqKEeHtOE0bkpYxA1FnA+3CfmRF7IrFojZS5t5Imktkh5hyB2pErOEz2cqOBQHgxXBu2v9OQ9VRjQ==&#x27; &#x27;sha512-qk8zlFws6h64xzHAGEy6YZfsdrBw35yZxjtTLdf2i3loia6AMhyVGr1SEymMS0pyh4E+vvteQb/Ag+tFA9I5XA==&#x27; &#x27;sha512-ZGBm3aeRRxNRQPB2YJ6DO4zShvLSSa39tgOW8hl71h3uGvgZgdCMQFa4Fpt9AEF4p2rno73J8Q5okg8/5bTpfw==&#x27; &#x27;sha512-uZikZ+cAxhAVCzmMwm1GXFhtQQSALiZNccNQppFFF7YlCRORBIRutQ2eqQ/taW0PHOgYs1I1ibGk2wlT8bDstA==&#x27; &#x27;sha512-tiDKExCFguuBxNRIq1fRTHc+NeyBfI6DWKJIFSWJs1xhVQYkeL8PXvG+NDFbbhQ1LTbVJWryJs5gzUTPkjshtg==&#x27; &#x27;sha512-jIAfEATxrvmke3KPebwK6fGdup1YPJa5+DFYW7/8zGELMGNda+1JGDlBG2wSIsvjAPgM+3+LB2SWJ+wZ9FirMQ==&#x27; &#x27;sha512-W8bJy53nibSZ1nRMKKAWmINanqw+xvda7RVmddNzRIJ35rSs2nV4DvSdQp5Wlw+hwcgsMSZIxV5aLFUXGF6jmQ==&#x27; &#x27;sha512-SWldPZ4KVgpY77561HFQI7SZn654LyoDY4OeAtgC1n+TC4Vtqv9ch/sK4kqgtHOaKHEeSgsXJRkBMX6lccieZQ==&#x27; &#x27;sha512-W37fLMECy30rVEkwf3PLLBN7s99M+mnfo8Onr8JNszuGdmWPF7Jrpkv1gJ64AuF4dao4IO0RYD4i5xW/xk2xQw==&#x27;; style-src-attr &#x27;none&#x27;; font-src &#x27;self&#x27; https://fonts.gstatic.com data:; img-src &#x27;self&#x27; data: blob:; media-src &#x27;self&#x27; data:; manifest-src &#x27;self&#x27;; worker-src &#x27;none&#x27;; form-action &#x27;self&#x27;; frame-ancestors &#x27;none&#x27;; upgrade-insecure-requests;">
 <meta name="dirac-base-domain" content="">
 <script id="dirac-runtime-domain-bootstrap-v2">(function(){
 'use strict';
